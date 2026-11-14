@@ -13,7 +13,7 @@ Engineer mode build the Rerun recording once (Mission Control, tab *Rerun replay
 | 0:30 | (63 s to 75 s) | point at bubble + status | "Confidence drops to Degraded, so SLOW. At 75 seconds the model uncertainty passes 1.5 metres: Lost. Safe mode says STOP." |
 | 0:45 | (around 84 s) | point at worker + alerts | "A simulated worker is on the route. The worker is inside the safety bubble, so STOP, in English and Spanish." |
 | 0:55 | (90 s) | point at GPS tile | "GPS is back, confidence recovers to Trusted." |
-| 1:05 | Engineer mode | tabs *Error vs uncertainty*, *Wheel-slip learning* | "Actual error in this outage stays below one metre; the model uncertainty is deliberately conservative. The learned slip scale settles near 0.885: wheels report about 11 % more speed than the robot really makes." |
+| 1:05 | Engineer mode | tabs *Error vs uncertainty*, *Wheel-slip learning* | "Actual error in this outage stays below one metre; the model uncertainty is deliberately conservative. The learned slip scale settles near 0.885: the filter scales the wheel speed down by about 11.5 % to account for slip." |
 | 1:25 | GPS Failure Simulator | n/a | "Across six held-out runs, a 30 second outage: odometry + GPS drifts 8.9 m worst case, adding the IMU 6.1 m, adding slip learning 3.7 m." |
 | 1:45 | Sensor Cost Comparison | n/a | "Slip learning is software only: same sensors as odometry + IMU + GPS." |
 | 2:00 | n/a | n/a | "Decision support from computed results, not a certified safety system." |
