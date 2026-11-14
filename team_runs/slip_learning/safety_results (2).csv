@@ -1,0 +1,57 @@
+closest_unsafe_m,seq,outage_s,setup,encounters,unsafe,median_stop_dist_m,bubble_contains_truth_outage_pct,time_green_pct,time_yellow_pct,time_red_pct
+,02_13B_Jackal,30,"Conventional (IMU+GPS, no bubble)",4,0,4.6,34.5,74.7,9.7,15.6
+1.4,02_13B_Jackal,30,"Ours, fixed bubble",4,4,1.7,97.7,75.7,10.4,13.9
+,02_13B_Jackal,30,"Ours, uncertainty bubble + states",4,0,11.4,97.7,75.7,10.4,13.9
+,02_13B_Jackal,30,"Ours, uncertainty bubble only",4,0,4.5,97.7,75.7,10.4,13.9
+0.1,02_13B_Jackal,60,"Conventional (IMU+GPS, no bubble)",3,2,7.7,65.2,61.0,7.2,31.8
+0.1,02_13B_Jackal,60,"Ours, fixed bubble",3,1,3.0,99.9,61.5,7.7,30.8
+,02_13B_Jackal,60,"Ours, uncertainty bubble + states",3,0,30.2,99.9,61.5,7.7,30.8
+,02_13B_Jackal,60,"Ours, uncertainty bubble only",3,0,12.2,99.9,61.5,7.7,30.8
+0.0,01_13B_Jackal,30,"Conventional (IMU+GPS, no bubble)",14,5,3.4,37.9,69.5,13.9,16.6
+0.1,01_13B_Jackal,30,"Ours, fixed bubble",14,6,2.3,98.7,70.6,14.6,14.8
+,01_13B_Jackal,30,"Ours, uncertainty bubble + states",14,0,7.3,98.7,70.6,14.6,14.8
+,01_13B_Jackal,30,"Ours, uncertainty bubble only",14,0,4.4,98.7,70.6,14.6,14.8
+0.0,01_13B_Jackal,60,"Conventional (IMU+GPS, no bubble)",10,8,2.4,64.4,55.2,8.8,36.0
+0.0,01_13B_Jackal,60,"Ours, fixed bubble",10,3,2.2,99.9,55.6,9.4,35.0
+,01_13B_Jackal,60,"Ours, uncertainty bubble + states",10,0,24.6,99.9,55.6,9.4,35.0
+,01_13B_Jackal,60,"Ours, uncertainty bubble only",10,0,7.9,99.9,55.6,9.4,35.0
+0.0,03_13B_Jackal,30,"Conventional (IMU+GPS, no bubble)",18,6,4.8,33.5,70.4,11.7,17.9
+0.0,03_13B_Jackal,30,"Ours, fixed bubble",18,13,1.8,98.4,71.5,12.5,15.9
+,03_13B_Jackal,30,"Ours, uncertainty bubble + states",18,0,11.2,98.4,71.5,12.5,15.9
+,03_13B_Jackal,30,"Ours, uncertainty bubble only",18,0,4.4,98.4,71.5,12.5,15.9
+0.0,03_13B_Jackal,60,"Conventional (IMU+GPS, no bubble)",14,11,2.1,62.5,52.9,8.9,38.2
+0.0,03_13B_Jackal,60,"Ours, fixed bubble",14,6,2.3,93.0,53.3,9.6,37.1
+,03_13B_Jackal,60,"Ours, uncertainty bubble + states",14,0,28.9,93.0,53.3,9.6,37.1
+0.8,03_13B_Jackal,60,"Ours, uncertainty bubble only",14,1,8.1,93.0,53.3,9.6,37.1
+,04_13D_Jackal,30,"Conventional (IMU+GPS, no bubble)",8,0,4.1,32.3,70.7,11.7,17.6
+1.1,04_13D_Jackal,30,"Ours, fixed bubble",8,4,2.0,99.8,71.9,12.5,15.6
+,04_13D_Jackal,30,"Ours, uncertainty bubble + states",8,0,10.6,99.8,71.9,12.5,15.6
+,04_13D_Jackal,30,"Ours, uncertainty bubble only",8,0,4.5,99.8,71.9,12.5,15.6
+0.0,04_13D_Jackal,60,"Conventional (IMU+GPS, no bubble)",6,5,2.6,65.8,55.1,8.3,36.5
+0.0,04_13D_Jackal,60,"Ours, fixed bubble",6,2,2.7,100.0,55.5,9.0,35.5
+,04_13D_Jackal,60,"Ours, uncertainty bubble + states",6,0,26.9,100.0,55.5,9.0,35.5
+,04_13D_Jackal,60,"Ours, uncertainty bubble only",6,0,9.1,100.0,55.5,9.0,35.5
+0.0,05_13D_Jackal,30,"Conventional (IMU+GPS, no bubble)",8,4,4.7,31.7,70.5,12.0,17.5
+0.0,05_13D_Jackal,30,"Ours, fixed bubble",8,6,1.8,85.5,71.4,12.8,15.8
+,05_13D_Jackal,30,"Ours, uncertainty bubble + states",8,0,9.9,85.5,71.4,12.8,15.8
+0.0,05_13D_Jackal,30,"Ours, uncertainty bubble only",8,1,4.4,85.5,71.4,12.8,15.8
+0.0,05_13D_Jackal,60,"Conventional (IMU+GPS, no bubble)",6,5,8.9,56.4,54.3,10.0,35.7
+0.0,05_13D_Jackal,60,"Ours, fixed bubble",6,5,2.1,79.4,54.7,10.5,34.7
+,05_13D_Jackal,60,"Ours, uncertainty bubble + states",6,0,32.1,79.4,54.7,10.5,34.7
+,05_13D_Jackal,60,"Ours, uncertainty bubble only",6,0,8.5,79.4,54.7,10.5,34.7
+0.1,06_14B_Jackal,30,"Conventional (IMU+GPS, no bubble)",3,1,4.1,33.3,72.4,10.8,16.8
+1.5,06_14B_Jackal,30,"Ours, fixed bubble",3,2,1.7,99.1,73.2,11.8,15.0
+,06_14B_Jackal,30,"Ours, uncertainty bubble + states",3,0,11.0,99.1,73.2,11.8,15.0
+,06_14B_Jackal,30,"Ours, uncertainty bubble only",3,0,4.4,99.1,73.2,11.8,15.0
+0.1,06_14B_Jackal,60,"Conventional (IMU+GPS, no bubble)",2,1,3.0,66.8,62.0,7.1,30.9
+1.5,06_14B_Jackal,60,"Ours, fixed bubble",2,1,1.9,100.0,62.4,7.9,29.7
+,06_14B_Jackal,60,"Ours, uncertainty bubble + states",2,0,35.0,100.0,62.4,7.9,29.7
+,06_14B_Jackal,60,"Ours, uncertainty bubble only",2,0,9.6,100.0,62.4,7.9,29.7
+0.0,07_14B_Jackal,30,"Conventional (IMU+GPS, no bubble)",11,3,4.8,34.4,69.6,12.9,17.5
+1.2,07_14B_Jackal,30,"Ours, fixed bubble",11,5,2.0,98.9,70.7,13.6,15.7
+,07_14B_Jackal,30,"Ours, uncertainty bubble + states",11,0,11.7,98.9,70.7,13.6,15.7
+,07_14B_Jackal,30,"Ours, uncertainty bubble only",11,0,4.6,98.9,70.7,13.6,15.7
+0.0,07_14B_Jackal,60,"Conventional (IMU+GPS, no bubble)",8,5,5.0,68.8,54.4,9.8,35.8
+0.1,07_14B_Jackal,60,"Ours, fixed bubble",8,2,2.2,99.4,55.0,10.4,34.6
+,07_14B_Jackal,60,"Ours, uncertainty bubble + states",8,0,32.4,99.4,55.0,10.4,34.6
+,07_14B_Jackal,60,"Ours, uncertainty bubble only",8,0,10.3,99.4,55.0,10.4,34.6
