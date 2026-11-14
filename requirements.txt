@@ -1,11 +1,12 @@
-# Tested with Python 3.13 on Windows 11 (2026-11-13)
+# One environment for the whole project (Python 3.13, tested on Windows 11, 2026-11-14).
+#   py -3.13 -m venv .venv
+#   .venv\Scripts\python -m pip install -r requirements.txt
 numpy==2.5.4
 pandas==3.1.1
 scipy==1.18.1
-scikit-learn==1.9.1
 streamlit==1.67.0
 plotly==7.1.0
-rosbags==0.11.9   # ROS1 bag reading + message deserialisation (no ROS install needed)
-lz4==4.4.5        # some ROS bags use lz4-compressed chunks
+rosbags==0.11.9     # ROS1 bag reading and message decoding (no ROS install needed)
+lz4==4.4.5          # some CitrusFarm bags use lz4-compressed chunks
+rerun-sdk==0.43.2   # .rrd export and the Rerun web viewer (Engineer replay)
 pytest==9.2.0
-# optional: rerun-sdk for the 3D scene (not yet used)
