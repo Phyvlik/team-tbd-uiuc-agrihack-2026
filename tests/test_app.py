@@ -195,3 +195,14 @@ def test_discover_skips_orchard_geometry(tmp_path, monkeypatch):
     (tmp_path / "06_14B_Jackal__my-method.csv").write_text("t,est_x,est_y\n0,0,0\n")
     monkeypatch.setattr(ad, "TEAM_DIRS", [tmp_path])
     assert [p.name for p in ad.discover()] == ["06_14B_Jackal__my-method.csv"]
+
+
+def test_documented_example_run_imports():
+    """The README's example teammate file (synthetic values) goes through the adapter as documented."""
+    from dashboard import adapter as ad
+    f = Path(APP).parent / "docs" / "examples" / "06_14B_Jackal__example-synthetic.csv"
+    b = ad.from_csv(f)
+    assert (b.sequence, b.method, b.provenance) == ("06_14B_Jackal", "example-synthetic", "imported")
+    assert len(b.t) == 6 and b.cov is not None and b.r95 is not None and b.gyro_bias is None
+    assert b.outages == [[1.5, 2.0]] and b.err is not None
+    assert any("time unit: s" in c for c in b.checks) and any("recorded receiver fixes" in c for c in b.checks)

@@ -1,0 +1,10 @@
+{
+  "sequence_id": "06_14B_Jackal",
+  "method": "example-synthetic",
+  "sensors": "odom+imu+gps",
+  "gps_input": "recorded",
+  "point": "antenna",
+  "time_unit": "s",
+  "length_unit": "m",
+  "outages_s": [[1.5, 2.0]]
+}
