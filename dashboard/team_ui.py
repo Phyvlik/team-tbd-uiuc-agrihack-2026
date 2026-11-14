@@ -499,34 +499,31 @@ def rerun_tab(run: ts.TeamRun, mode: str):
     st.caption("Recorded playback in Rerun's own viewer: the Streamlit slider does not move Rerun's cursor. "
                 "No LiDAR is shown because the export contains none.")
     b = st.container(horizontal=True, gap="small")
+    if b.button("▶ Open Rerun replay", type="primary", key="team_rrd_open",
+                help="Builds the recording for this sequence and mode if needed, then embeds Rerun's viewer."):
+        with st.spinner(f"Preparing the Rerun replay of {run.sequence} ({mode} mode)…"):
+            rx.build_team_recording(run, mode)                 # reuses an existing file
+            ss.rrd_team_url = rx.serve_web(p, 9090, 9877, slot="eng")
     if p.exists():
-        st.caption(f"Existing recording: {p.name}")
-        if b.button("Rebuild recording (overwrite)", key="team_rrd_rebuild"):
+        if b.button("Rebuild recording", key="team_rrd_rebuild", help="Overwrite the .rrd file for this sequence."):
             with st.spinner("Logging the slip-learning replay to Rerun…"):
                 rx.build_team_recording(run, mode, overwrite=True)
-            ss.rrd_team_url = None
-    elif b.button("Build slip-learning recording (.rrd)", type="primary", key="team_rrd_build"):
-        with st.spinner("Logging the slip-learning replay to Rerun…"):
-            rx.build_team_recording(run, mode)
-        st.rerun()
-    if p.exists():
+                ss.rrd_team_url = rx.serve_web(p, 9090, 9877, slot="eng")
         b.download_button("⬇ Download .rrd", p.read_bytes(), file_name=p.name, mime="application/octet-stream",
                           key="team_rrd_dl")
-        if b.button("Open embedded web viewer", key="team_rrd_web"):
-            with st.spinner("Starting Rerun web viewer…"):
-                ss.rrd_team_url = rx.serve_web(p, 9090, 9877, slot="eng")
-                ss.rrd_team = str(p)
         if b.button("Open native Rerun app", key="team_rrd_native"):
             rx.open_native(p)
-        if ss.get("rrd_team_url") and ss.get("rrd_team") == str(p):
-            st.iframe(ss.rrd_team_url, height=640)
+        st.caption(f"Recording: `{p.name}` ({run.sequence}, {mode} mode)")
+    if ss.get("rrd_team_url") and p.exists() and rx.served("eng", p):   # only THIS sequence and mode, never stale
+        st.iframe(ss.rrd_team_url, height=640)
 
 
 def engineer(seq: str):
     ss = st.session_state
     run = load(seq)
     t_now = float(ss[TKEY])
-    st.divider()
+    ui.section("Engineer tools", f"{seq} · {ts.SOURCE_LABEL} · {ss.team_mode} mode · Rerun replay, RTK vs estimate, "
+               "error vs model uncertainty, learned wheel slip, outages and diagnostics")
     tabs = st.tabs(["Rerun replay", "Trajectory comparison", "Error vs uncertainty", "Wheel-slip learning",
                     "Decisions", "Event log", "Validation & provenance"])
     with tabs[0]:
@@ -798,10 +795,13 @@ def mission_control():
     header(seq, eng)
     run = load(seq)
     toolbar(run)
-    st.fragment(live_panel)()          # reruns come from the player's clock reports, not a timer
     if eng:
+        # Engineer tools first (Rerun replay is the first tab); the operator replay follows below
         engineer(seq)
+        ui.section("Operator replay", f"{seq} · same clock as the slider · the view operators see")
+        st.fragment(live_panel)()      # reruns come from the player's clock reports, not a timer
     else:
+        st.fragment(live_panel)()
         st.markdown("<div class='small' style='margin-top:6px'>Switch to <b>Engineer</b> mode (sidebar) for the "
                     "reference trajectory, error vs uncertainty, wheel-slip learning and the Rerun replay.</div>",
                     unsafe_allow_html=True)

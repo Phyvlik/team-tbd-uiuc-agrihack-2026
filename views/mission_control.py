@@ -176,10 +176,15 @@ def live_panel():
         st.caption("Spanish drafted for the demo — pending native-speaker review.")
 
 
-# 3D orchard / 2D map: reruns come from the player's clock reports. Rerun 3D keeps a timer.
-st.fragment(run_every=0.5 if (ss.playing == "mc" and ss.viz == "Rerun 3D") else None)(live_panel)()
+
+
+def operator_replay():
+    # 3D orchard / 2D map: reruns come from the player's clock reports. Rerun 3D keeps a timer.
+    st.fragment(run_every=0.5 if (ss.playing == "mc" and ss.viz == "Rerun 3D") else None)(live_panel)()
+
 
 if not eng:
+    operator_replay()
     st.markdown("<div class='small' style='margin-top:6px'>Switch to <b>Engineer</b> mode (sidebar) for the Rerun "
                 "replay, error timelines, sensor-fusion diagnostics and method comparison.</div>",
                 unsafe_allow_html=True)
@@ -187,7 +192,9 @@ if not eng:
     st.stop()
 
 # ============================================================ ENGINEER ===
-st.divider()
+# Engineer tools first (Rerun replay is the first tab); the operator replay follows at the end.
+ui.section("Engineer tools", f"{info.label} · {be.METHOD_LABEL[ss.method]} · Rerun replay, error vs uncertainty, "
+           "trajectories, sensor fusion and GPS diagnostics")
 t_now = t0 + float(ss.mc_t)
 tabs = st.tabs(["Rerun replay", "Error vs uncertainty", "Trajectory comparison", "Sensor fusion & GPS", "Event log",
                 "Team data (adapter)", "Run metrics & provenance"])
@@ -206,26 +213,29 @@ with tabs[0]:
                    "playback is independent. LiDAR point clouds: Data unavailable.")
         b = st.container(horizontal=True, gap="small")
         want = (key, ss.method, outages, jumps, len(team_runs))
-        if b.button("Build Engineer recording (.rrd)", type="primary"):
-            with st.spinner("Logging all methods and diagnostics to Rerun…"):
-                p = rx.build_recording(key, ss.method, outages, jumps, trusted, stop, kind="engineer", zones=zones,
-                                       imported=team_runs)
-                ss.rrd_eng, ss.rrd_eng_for, ss.rrd_eng_url = str(p), want, None
-        if ss.rrd_eng and ss.get("rrd_eng_for") != want:
-            st.warning("The scenario changed since the last recording — rebuild to match.")
-        if ss.rrd_eng and Path(ss.rrd_eng).exists():
+        if b.button("▶ Open Rerun replay", type="primary", key="mc_rrd_open",
+                    help="Builds the recording for the current scenario if needed, then embeds Rerun's viewer."):
+            with st.spinner(f"Preparing the Rerun replay of {key} ({be.METHOD_LABEL[ss.method]})…"):
+                if not (ss.rrd_eng and ss.get("rrd_eng_for") == want and Path(ss.rrd_eng).exists()):
+                    p = rx.build_recording(key, ss.method, outages, jumps, trusted, stop, kind="engineer",
+                                           zones=zones, imported=team_runs)
+                    ss.rrd_eng, ss.rrd_eng_for = str(p), want
+                ss.rrd_eng_url = rx.serve_web(Path(ss.rrd_eng), 9090, 9877, slot="eng")
+        current = bool(ss.rrd_eng) and ss.get("rrd_eng_for") == want and Path(ss.rrd_eng).exists()
+        if ss.rrd_eng and not current:
+            st.info(f"The last recording was for a different scenario. Click Open Rerun replay to build and show "
+                    f"{key} ({be.METHOD_LABEL[ss.method]}).")
+        if current:
             p = Path(ss.rrd_eng)
             b.download_button("⬇ Download .rrd", p.read_bytes(), file_name=p.name, mime="application/octet-stream")
-            if b.button("Open embedded web viewer"):
-                with st.spinner("Starting Rerun web viewer…"):
-                    ss.rrd_eng_url = rx.serve_web(p, 9090, 9877, slot="eng")
             if b.button("Open native Rerun app"):
                 rx.open_native(p)
                 st.toast("Rerun desktop viewer launched")
-            st.caption(f"Saved: `{p}` · reproduce: `python scripts/export_rerun.py --source {key} --method {ss.method}"
-                       + (f" --outage {ss.outage_start:.0f}:{ss.outage_dur:.0f}" if ss.outage_dur else "") + "`")
-        if ss.get("rrd_eng_url"):
-            st.iframe(ss.rrd_eng_url, height=760)
+            st.caption(f"Recording: `{p.name}` · reproduce: `python scripts/export_rerun.py --source {key} --method "
+                       f"{ss.method}" + (f" --outage {ss.outage_start:.0f}:{ss.outage_dur:.0f}" if ss.outage_dur else "")
+                       + "`")
+            if ss.get("rrd_eng_url") and rx.served("eng", p):   # only THIS scenario's recording, never stale
+                st.iframe(ss.rrd_eng_url, height=760)
 
 with tabs[1]:
     xr = None
@@ -389,3 +399,6 @@ with tabs[6]:
         ("Backend code", "src/ in the project folder" if be.BACKEND_DIR == be.APP_DIR else str(be.BACKEND_DIR)),
     ], columns=["item", "value"])
     ui.df_table(src)
+
+ui.section("Operator replay", f"{info.label} · same clock as the slider · the view operators see")
+operator_replay()
