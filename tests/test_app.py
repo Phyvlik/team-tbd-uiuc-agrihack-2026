@@ -206,3 +206,34 @@ def test_documented_example_run_imports():
     assert len(b.t) == 6 and b.cov is not None and b.r95 is not None and b.gyro_bias is None
     assert b.outages == [[1.5, 2.0]] and b.err is not None
     assert any("time unit: s" in c for c in b.checks) and any("recorded receiver fixes" in c for c in b.checks)
+
+
+@pytest.mark.parametrize("src", ["Backend EKF (live)", "Team Slip-Learning Results"])
+def test_engineer_tools_come_before_operator_replay(src):
+    """Engineer mode shows the Rerun replay and diagnostics first, the operator replay below them."""
+    at = _open("views/mission_control.py", mode="Engineer", results_src=src)
+    assert not at.exception, [e.value for e in at.exception]
+    txt = _text(at)
+    assert txt.index("Engineer tools") < txt.index("Operator replay")
+    assert at.tabs[0].label == "Rerun replay"
+    assert any(b.label == "▶ Open Rerun replay" for b in at.button)
+
+
+def test_data_source_survives_team_results_toggle():
+    """The EKF data source selector keeps its value after Team results hide it."""
+    at = _open("views/mission_control.py", source="02_13B_Jackal")
+    at.session_state["results_src"] = "Team Slip-Learning Results"
+    at.run()
+    at.session_state["results_src"] = "Backend EKF (live)"
+    at.run()
+    assert not at.exception
+    box = [s for s in at.selectbox if s.label == "Data source"][0]
+    assert box.value == "02_13B_Jackal" == at.session_state["source"]
+
+
+def test_rerun_never_reports_an_unserved_recording(tmp_path):
+    from dashboard import rerun_export as rx
+    f = tmp_path / "x.rrd"
+    assert not rx.served("nobody", f)          # nothing served in this slot, file missing
+    f.write_bytes(b"0")
+    assert not rx.served("nobody", f)
