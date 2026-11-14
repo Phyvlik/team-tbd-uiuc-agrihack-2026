@@ -486,13 +486,54 @@ def _metrics(err: np.ndarray, t: np.ndarray, outages) -> dict:
             "peak error in outages (m)": round(float(np.max(err[m])), 2) if m.any() else None}
 
 
+def rerun_tab(run: ts.TeamRun, mode: str):
+    from . import rerun_export as rx
+    ok, ver = rx.available()
+    if not ok:
+        ui.not_evaluated("Rerun replay", f"rerun-sdk not importable ({ver}).", "run with this project's .venv")
+        return
+    ss = st.session_state
+    p = rx.team_recording_path(run.sequence, mode)
+    st.markdown(f"**Rerun {ver}** recording of the slip-learning replay ({run.sequence}, {mode} mode): RTK reference, "
+                "confidence-coloured slip-learning trajectory, robot pose, 2σ bubble, safety bubble, simulated workers, "
+                "final simulated spray outcomes, outage and state events, and time series of error, 2σ, slip scale, "
+                f"state and decisions. `time` = the exported t, the same clock as the slider (now **{ss[TKEY]:.1f} s**).")
+    st.caption("Recorded playback in Rerun's own viewer: the Streamlit slider does not move Rerun's cursor. "
+                "No LiDAR is shown because the export contains none.")
+    b = st.container(horizontal=True, gap="small")
+    if p.exists():
+        st.caption(f"Existing recording: {p.name}")
+        if b.button("Rebuild recording (overwrite)", key="team_rrd_rebuild"):
+            with st.spinner("Logging the slip-learning replay to Rerun…"):
+                rx.build_team_recording(run, mode, overwrite=True)
+            ss.rrd_team_url = None
+    elif b.button("Build slip-learning recording (.rrd)", type="primary", key="team_rrd_build"):
+        with st.spinner("Logging the slip-learning replay to Rerun…"):
+            rx.build_team_recording(run, mode)
+        st.rerun()
+    if p.exists():
+        b.download_button("⬇ Download .rrd", p.read_bytes(), file_name=p.name, mime="application/octet-stream",
+                          key="team_rrd_dl")
+        if b.button("Open embedded web viewer", key="team_rrd_web"):
+            with st.spinner("Starting Rerun web viewer…"):
+                ss.rrd_team_url = rx.serve_web(p, 9090, 9877, slot="eng")
+                ss.rrd_team = str(p)
+        if b.button("Open native Rerun app", key="team_rrd_native"):
+            rx.open_native(p)
+        if ss.get("rrd_team_url") and ss.get("rrd_team") == str(p):
+            st.iframe(ss.rrd_team_url, height=640)
+
+
 def engineer(seq: str):
     ss = st.session_state
     run = load(seq)
     t_now = float(ss[TKEY])
     st.divider()
-    tabs = st.tabs(["Trajectory comparison", "Error vs uncertainty", "Wheel-slip learning", "Decisions",
-                    "Event log", "Validation & provenance"])
+    tabs = st.tabs(["Rerun replay", "Trajectory comparison", "Error vs uncertainty", "Wheel-slip learning",
+                    "Decisions", "Event log", "Validation & provenance"])
+    with tabs[0]:
+        rerun_tab(run, ss.team_mode)
+    tabs = tabs[1:]
     with tabs[0]:
         bk = backend_comparison(seq)
         st.plotly_chart(trajectory_figure(run, bk), key="team_traj", theme=None, config={"displaylogo": False})

@@ -237,6 +237,38 @@ def test_events_and_situation_02(run02):
     assert ts.next_time(ev[ev.kind == "gps"].t_rel, 0.0) == pytest.approx(a)
 
 
+def _rrd_series(path: Path, entity: str):
+    from rerun.chunk import RrdReader
+    out = {}
+    for c in RrdReader(str(path)).stream():
+        if c.entity_path == entity and not c.is_static:
+            for k, v in c.to_record_batch().to_pydict().items():
+                out.setdefault(k, []).extend(v)
+    assert out, f"{entity} not in {path.name}"
+    t = np.array([x.total_seconds() for x in out.pop("time")])
+    order = np.argsort(t)
+    return t[order], {k: [v[i] for i in order] for k, v in out.items() if len(v) == len(t)}
+
+
+def test_team_rerun_export_matches_csv(tmp_path, run02):
+    pytest.importorskip("rerun")
+    from dashboard import rerun_export as rx
+    out = tmp_path / "team.rrd"
+    p, created = rx.build_team_recording(run02, ts.SAFE, out=out)
+    assert created and p.exists()
+    assert rx.build_team_recording(run02, ts.SAFE, out=out) == (out, False)       # never overwritten silently
+    d = run02.dash
+    t, cols = _rrd_series(p, "/world/robot")
+    xyz = np.array([v[0] for v in cols["Transform3D:translation"]])
+    assert np.max(np.hypot(xyz[:, 0] - np.interp(t, d.t, d.x_est), xyz[:, 1] - np.interp(t, d.t, d.y_est))) < 2e-3
+    t, cols = _rrd_series(p, "/plots/error/actual_error_m")
+    err = np.array([x[0] for x in cols["Scalars:scalars"]])
+    assert len(err) == len(d) and np.max(np.abs(err - d.error_m.to_numpy())) < 1e-4    # same clock, same values
+    t, _ = _rrd_series(p, "/world/workers/worker_1")
+    w = run02.crew.iloc[0]
+    assert t[0] == pytest.approx(w.t_outage_start, abs=1e-6) and t[-1] == pytest.approx(w.t + 15, abs=1e-6)
+
+
 def test_reference_matches_citrusfarm_gt():
     """x_true, y_true are the gt.csv reference on the same clock (needs the local CitrusFarm data)."""
     from src.data_loader import PROCESSED_DIR, load_processed

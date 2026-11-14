@@ -286,6 +286,164 @@ def build_recording(key: str, method: str, outages: tuple, jumps: tuple, trusted
     return out
 
 
+# ------------------------------------------------------- teammate results ---
+
+TEAM_SPRAY_RGB = {"correct": SPRAY_RGB[orc.TREATED], "wrong_tree": SPRAY_RGB[orc.WRONG_TREE],
+                  "missed": SPRAY_RGB[orc.MISSED], "double": SPRAY_RGB[orc.DOUBLE]}
+
+
+def team_recording_path(sequence: str, mode: str) -> Path:
+    return RECORDINGS_DIR / f"team_{sequence}_{mode.lower()}.rrd"
+
+
+def build_team_recording(run, mode: str, *, out: Path | None = None, overwrite: bool = False) -> tuple[Path, bool]:
+    """Rerun recording of the teammate's slip-learning replay (dashboard/team_slip.TeamRun).
+
+    Logs the supplied columns only: RTK reference, teammate estimate (confidence-coloured),
+    robot pose, 2*sigma bubble, bubble_m ring, simulated workers, final simulated spray
+    outcomes, outage and state events, and time series of error_m, 2*sigma, slip_scale,
+    state and the Safe / Productive decisions. Timeline ``time`` = the teammate's t
+    (seconds since the first gt.csv sample). No LiDAR is logged: none is in the export.
+
+    Returns (path, created). An existing file is reused unless ``overwrite`` is True."""
+    import rerun as rr
+    import rerun.blueprint as rrb
+
+    from . import team_slip as ts
+
+    out = out or team_recording_path(run.sequence, mode)
+    if out.exists() and not overwrite:
+        return out, False
+    out.parent.mkdir(parents=True, exist_ok=True)
+    d = run.dash
+    t = d.t.to_numpy()
+    rec = rr.RecordingStream("orchard_robot_team", recording_id=f"team-{run.sequence}-{mode}")
+    TL = "time"
+
+    def scal(path, tt, vals):
+        vals = np.asarray(vals, float)
+        m = np.isfinite(vals)
+        if m.any():
+            rec.send_columns(path, indexes=[rr.TimeColumn(TL, duration=np.asarray(tt, float)[m])],
+                             columns=rr.Scalars.columns(scalars=vals[m]))
+
+    rec.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
+    rec.log("world/info", rr.TextDocument(
+        f"Source: {ts.SOURCE_LABEL} · {run.sequence} · {mode} mode\n"
+        "Estimates, sigma, state, slip scale and error: COMPUTED by the slip-learning localization analysis "
+        "(odometry + IMU + GPS + learned wheel-slip correction).\n"
+        "Reference: CitrusFarm gt.csv (post-processed RTK), scoring only.\n"
+        f"GPS outages: SIMULATED ({len(run.outages)} windows). Workers, trees and spray outcomes: SIMULATED.\n"
+        "Uncertainty 2*sigma is model-estimated, not validated accuracy.\n"
+        "GO / SLOW / STOP: documented slip-learning rules applied by the dashboard (simulated decision support).\n"
+        "Tree colours show FINAL simulated outcomes (spray timing is not in the export).\n"
+        "No LiDAR, gyro bias, NIS or GPS rejection history in this export."), static=True)
+    rec.log("world/reference_rtk", rr.LineStrips3D([np.c_[d.x_true, d.y_true, np.full(len(d), 0.05)][::2]],
+                                                    colors=[(195, 194, 183)], radii=0.04), static=True)
+    # full teammate path, split by state (static overview)
+    lv = d.state.to_numpy()
+    XY = np.c_[d.x_est, d.y_est, np.full(len(d), 0.12)]
+    chg = np.flatnonzero(np.r_[True, lv[1:] != lv[:-1]])
+    strips, scol = [], []
+    for a_, b_ in zip(chg, list(chg[1:]) + [len(lv)]):
+        strips.append(XY[a_:min(b_ + 1, len(lv))][::2] if b_ - a_ > 4 else XY[a_:min(b_ + 1, len(lv))])
+        scol.append(STATE_RGB[int(lv[a_])])
+    rec.log("world/slip_learning_estimate", rr.LineStrips3D(strips, colors=scol, radii=0.08), static=True)
+    if len(run.trees):
+        T = run.trees
+        rec.log("world/trees_final_simulated", rr.Ellipsoids3D(
+            centers=np.c_[T.x, T.y, np.full(len(T), 2.3)], half_sizes=[(1.2, 1.2, 1.0)] * len(T),
+            colors=[TEAM_SPRAY_RGB[s] for s in T.status], fill_mode="solid"), static=True)
+    # robot, status light, 2*sigma bubble, safety ring (~5 Hz)
+    step = max(1, int(round(0.2 / np.median(np.diff(t)))))
+    idx = np.arange(0, len(d), step)
+    E, tt = d.iloc[idx], t[idx]
+    cols = [STATE_RGB[int(v)] for v in lv[idx]]
+    rec.log("world/robot/body", rr.Boxes3D(half_sizes=[(0.5, 0.43, 0.28)], centers=[(0, 0, 0.4)],
+                                           colors=[(217, 222, 227)], fill_mode="solid"), static=True)
+    rec.log("world/robot/heading", rr.Arrows3D(vectors=[(1.8, 0, 0)], origins=[(0, 0, 0.9)], colors=[(238, 242, 239)],
+                                               radii=0.06), static=True)
+    rec.send_columns("world/robot", indexes=[rr.TimeColumn(TL, duration=tt)],
+                     columns=rr.Transform3D.columns(translation=np.c_[E.x_est, E.y_est, np.zeros(len(E))],
+                                                    quaternion=_quat_z(E.yaw_est.to_numpy())))
+    rec.send_columns("world/robot/status_light", indexes=[rr.TimeColumn(TL, duration=tt)],
+                     columns=rr.Points3D.columns(positions=np.tile([0, 0, 1.1], (len(E), 1)), colors=cols,
+                                                 radii=np.full(len(E), 0.22)))
+    two_s = 2 * E.sigma.to_numpy()
+    rec.send_columns("world/uncertainty_2sigma", indexes=[rr.TimeColumn(TL, duration=tt)],
+                     columns=rr.Ellipsoids3D.columns(centers=np.c_[E.x_est, E.y_est, np.full(len(E), 0.2)],
+                                                     half_sizes=np.c_[two_s, two_s, np.minimum(1.2 + 0.4 * two_s, 3.0)],
+                                                     colors=[(*c, 70) for c in cols]))
+    dec = ts.decision_series(run, mode)
+    a = np.linspace(0, 2 * np.pi, 40)
+    D = dec.iloc[idx]
+    for x, y, b, act, ti in zip(E.x_est, E.y_est, D.bubble_m, D.action, tt):
+        rec.set_time(TL, duration=float(ti))
+        rec.log("world/safety_bubble", rr.LineStrips3D([np.c_[x + b * np.cos(a), y + b * np.sin(a), np.full(40, 0.06)]],
+                                                       colors=[STATE_RGB[ts.ACTION_LEVEL[act]]], radii=0.05))
+    # simulated workers: visible from t_outage_start through t + 15 s
+    for k, w in enumerate(run.crew.itertuples()):
+        path = f"world/workers/worker_{k + 1}"
+        rec.set_time(TL, duration=float(w.t_outage_start))
+        rec.log(path, rr.Points3D([(w.x, w.y, 1.6)], radii=0.25, colors=[(238, 242, 239)],
+                                  labels=[f"Worker {k + 1} (simulated)"], show_labels=True),
+                rr.LineStrips3D([np.c_[w.x + ts.WORKER_RADIUS_M * np.cos(a), w.y + ts.WORKER_RADIUS_M * np.sin(a),
+                                       np.full(40, 0.05)]], colors=[(238, 242, 239)], radii=0.03))
+        rec.set_time(TL, duration=float(w.t + ts.WORKER_VISIBLE_AFTER_S))
+        rec.log(path, rr.Clear(recursive=True))
+    # outage markers + event log
+    for a_, b_ in run.outages:
+        for tm, lab in ((a_, "GPS lost"), (b_, "GPS restored")):
+            k = run.index_at(tm)
+            rec.set_time(TL, duration=float(tm))
+            rec.log(f"world/events/{lab.replace(' ', '_').lower()}",
+                    rr.Points3D([(d.x_est.iloc[k], d.y_est.iloc[k], 3.0)], colors=[(250, 178, 25)], radii=0.3,
+                                labels=[f"{lab} (simulated)"], show_labels=True))
+    for r in ts.events(run, dec).itertuples():
+        rec.set_time(TL, duration=float(r.t_rel))
+        rec.log("events", rr.TextLog(r.label, level={"TRUSTED": rr.TextLogLevel.INFO, "DEGRADED": rr.TextLogLevel.WARN,
+                                                     "STOP": rr.TextLogLevel.ERROR}[r.state]))
+    # time series
+    rec.log("plots/error/actual_error_m", rr.SeriesLines(colors=[(57, 135, 229)], names=["actual error vs RTK"]),
+            static=True)
+    scal("plots/error/actual_error_m", t, d.error_m)
+    rec.log("plots/error/model_2sigma_m", rr.SeriesLines(colors=[(217, 89, 38)], names=["model 2 sigma"]), static=True)
+    scal("plots/error/model_2sigma_m", t, 2 * d.sigma)
+    scal("plots/error/target_0.3m", [t[0], t[-1]], [0.3, 0.3])
+    scal("plots/slip/learned_slip_scale", t, d.slip_scale)
+    scal("plots/state/navigation_0_trusted_1_degraded_2_lost", t, d.state)
+    scal("plots/state/gps_out", t, d.gps_out.astype(float))
+    for m in ts.MODES:
+        scal(f"plots/decision/{m.lower()}_0_go_1_slow_2_stop", t, ts.decision_series(run, m).level)
+    scal("plots/workers/distance_to_visible_worker_m", t, dec.dist_m)
+    scal("plots/workers/safety_bubble_m", t, d.bubble_m)
+
+    cx, cy = float(d.x_true.mean()), float(d.y_true.mean())
+    span = float(max(np.ptp(d.x_true), np.ptp(d.y_true), 30))
+    bp = rrb.Blueprint(
+        rrb.Horizontal(
+            rrb.Vertical(
+                rrb.Spatial3DView(origin="world", name="Slip-learning replay · trees and workers simulated",
+                                  background=(14, 20, 27), contents=["+ world/**", "- world/info"],
+                                  eye_controls=rrb.EyeControls3D(position=(cx - 0.5 * span, cy - 0.9 * span,
+                                                                           0.7 * span),
+                                                                 look_target=(cx, cy, 0), eye_up=(0, 0, 1))),
+                rrb.TextLogView(origin="events", name="Event log"), row_shares=[3, 1]),
+            rrb.Vertical(
+                rrb.TimeSeriesView(origin="plots/error", name="Actual error vs model 2σ (m)"),
+                rrb.TimeSeriesView(origin="plots/slip", name="Learned wheel-slip scale"),
+                rrb.TimeSeriesView(origin="plots/state", name="Navigation state · GPS outage"),
+                rrb.TimeSeriesView(origin="plots/decision", name="GO 0 · SLOW 1 · STOP 2"),
+                rrb.TimeSeriesView(origin="plots/workers", name="Simulated worker distance vs bubble (m)"),
+            ),
+            column_shares=[3, 2]),
+        rrb.TimePanel(timeline=TL, state="expanded"), rrb.SelectionPanel(state="collapsed"),
+        rrb.BlueprintPanel(state="collapsed"))
+    rec.save(str(out), default_blueprint=bp)
+    rec.flush()
+    return out, True
+
+
 # ------------------------------------------------------------ web viewer ---
 
 def _free(port: int) -> bool:
