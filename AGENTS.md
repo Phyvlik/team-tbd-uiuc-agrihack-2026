@@ -9,6 +9,10 @@ does; this file explains how to work on it.
 * `src/`: localization backend (EKF in `sensor_fusion.py`, `pipeline.run_experiment`, outages, integrity
   monitor, evaluation, CitrusFarm loading). Pure Python, no Streamlit.
 * `dashboard/`: UI layer. `dashboard/backend.py` is the only module that imports `src/`; pages go through it.
+* `dashboard/team_slip.py` (data and rules, no Streamlit) and `dashboard/team_ui.py` (views): the Team
+  Slip-Learning Results source, replaying `team_runs/slip_learning/`. Treat those CSVs as the source of truth:
+  validate and report, never recompute or "fix" their values. Pages branch on `team_ui.active()` and must keep
+  the backend EKF path unchanged.
 * `views/`: the five Streamlit pages, registered in `app.py`.
 * `scripts/`: data download/extraction, batch experiments, Rerun export, calibration audit.
 * `data/` (not committed), `results/` (committed batch tables), `team_runs/` (teammate run CSVs),

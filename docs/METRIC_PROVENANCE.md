@@ -80,6 +80,28 @@ Cross-cutting caveats: **U** = uses the EKF r95, which is *uncalibrated* (see `U
 | Crews, light, EN/ES crew alerts, distance, buffer, clearance | SIM crews + CMP estimate | U |
 | Safety evaluation vs RTK (inside margin, unsafe samples, missed) | CMP vs REC | U, F |
 
+## Team Slip-Learning Results source (added 2026-11-14)
+
+Category **SL**: computed by the team's slip-learning localization analysis and exported to
+`team_runs/slip_learning/`; replayed as supplied by `dashboard/team_slip.py` (validated, never recomputed).
+
+| display | source column / file | category | caveat |
+|---|---|---|---|
+| Robot pose, heading, trail | `x_est, y_est, yaw_est` | SL | n/a |
+| RTK reference (Engineer) | `x_true, y_true` (= `gt.csv`, verified) | REC | n/a |
+| Navigation confidence Trusted / Degraded / Lost | `state` (matches 2σ thresholds on every row) | SL | thresholds from the export's author |
+| Position uncertainty ± 2σ, bubble | `2 * sigma` | SL | model estimate, not validated; very conservative in outages |
+| Safety bubble ring | `bubble_m` (= 2 + 2σ) | SL | n/a |
+| GPS outage status and elapsed time | `gps_out` | SIM | fixed 30 s every 90 s |
+| GO / SLOW / STOP, Safe / Productive | documented rules on `state`, `bubble_m`, worker distance | SL + SIM | decision support only |
+| Nearest worker distance | estimate to visible `crew` row (visible `t_outage_start` to `t + 15`) | SIM + SL | workers simulated, on the path |
+| Spray outcome per tree | `trees.status` | SIM | timing approximate (02, 06) or final only (others) |
+| Actual error (Engineer) | `error_m` (equals the position difference) | SL vs REC | retrospective |
+| Learned slip scale | `slip_scale` | SL | not independently validated |
+| Backend EKF overlay (Engineer) | `src` pipeline with the same outage windows | CMP | different sensors and GPS input |
+| GPS Failure Simulator, Sensor Cost Comparison, Worker Safety tables | `test_results`, `spray_results`, `safety_results` | SL + SIM | aggregation basis stated on each page |
+| Not available | gyro bias, NIS, GPS rejections, raw GPS, LiDAR, covariance, speed | n/a | shown as "Not available in this export" |
+
 ## Audit actions taken
 
 * Uncertainty everywhere tagged **Uncalibrated**; Engineer "Run metrics" states coverage and that nothing is rescaled.

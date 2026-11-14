@@ -1,5 +1,28 @@
 # Two-minute demo script
 
+## Primary: Team Slip-Learning Results, 02_13B, Safe mode
+
+Setup: start the app, set **Localization results** to **Team Slip-Learning Results** (sequence 02_13B), and in
+Engineer mode build the Rerun recording once (Mission Control, tab *Rerun replay*). Return to **Operator** mode.
+
+| time | screen | action | say |
+|---|---|---|---|
+| 0:00 | Mission Control (Operator) | n/a | "Orchard canopy blocks GPS. This is a real CitrusFarm robot run, replayed with our slip-learning localization. Trees, workers and spraying are simulated, and labelled that way." |
+| 0:10 | | click **▶ Run GPS Failure Demo** | "Big green GO: position trusted, uncertainty about 8 centimetres." |
+| 0:20 | (playing, 60 s) | point at GPS tile | "We cut GPS for 30 seconds. The robot keeps estimating its position from wheels and the IMU, with a learned correction for wheel slip." |
+| 0:30 | (63 s to 75 s) | point at bubble + status | "Confidence drops to Degraded, so SLOW. At 75 seconds the model uncertainty passes 1.5 metres: Lost. Safe mode says STOP." |
+| 0:45 | (around 84 s) | point at worker + alerts | "A simulated worker is on the route. The worker is inside the safety bubble, so STOP, in English and Spanish." |
+| 0:55 | (90 s) | point at GPS tile | "GPS is back, confidence recovers to Trusted." |
+| 1:05 | Engineer mode | tabs *Error vs uncertainty*, *Wheel-slip learning* | "Actual error in this outage stays below one metre; the model uncertainty is deliberately conservative. The learned slip scale settles near 0.885: wheels report about 11 % more speed than the robot really makes." |
+| 1:25 | GPS Failure Simulator | n/a | "Across six held-out runs, a 30 second outage: odometry + GPS drifts 8.9 m worst case, adding the IMU 6.1 m, adding slip learning 3.7 m." |
+| 1:45 | Sensor Cost Comparison | n/a | "Slip learning is software only: same sensors as odometry + IMU + GPS." |
+| 2:00 | n/a | n/a | "Decision support from computed results, not a certified safety system." |
+
+**Do not claim:** real spraying, detected workers, robot commands, calibrated uncertainty, or independently
+validated slip learning.
+
+## Alternative: backend EKF, 06_14B
+
 Setup: start the app (`.venv\Scripts\python -m streamlit run app.py --server.port 8510`). Before judges arrive, open
 **Sensor Cost Comparison → Live · 06_14B** once (warms the cache) and, in Engineer mode, click **Build Engineer
 recording** once (the .rrd is reused). Return to **Operator** mode, source **06_14B · real**. Browser ≥ 1366 px wide.
