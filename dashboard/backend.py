@@ -1,10 +1,10 @@
-"""Read-only bridge to the team's backend repository.
+"""Read-only bridge to the localization backend (the ``src`` package).
 
-The algorithms, scripts and datasets live in the teammates' repo
-(``UIUC-AgriRobotics-2026``). This module puts that repo on ``sys.path`` and
-calls its public functions. Nothing here re-implements estimation, and nothing
-writes into the backend repo. Point ``AGRI_BACKEND_DIR`` at another checkout
-to use it instead.
+The algorithms live in ``src/`` and the CitrusFarm data in ``data/`` of this
+same project. This module calls the backend's public functions; nothing here
+re-implements estimation, and nothing writes into ``src/``, ``data/`` or
+``results/``. Set ``AGRI_BACKEND_DIR`` to a folder containing another
+``src/`` and ``data/`` checkout to use that one instead (optional).
 
 Every data source is tagged with a provenance so the UI can label it:
 
@@ -26,17 +26,17 @@ import pandas as pd
 import streamlit as st
 
 APP_DIR = Path(__file__).resolve().parents[1]
-BACKEND_DIR = Path(os.environ.get("AGRI_BACKEND_DIR", APP_DIR.parent / "UIUC-AgriRobotics-2026")).resolve()
+BACKEND_DIR = Path(os.environ.get("AGRI_BACKEND_DIR") or APP_DIR).resolve()
 CACHE_DIR = APP_DIR / ".cache"
 
 if not (BACKEND_DIR / "src" / "pipeline.py").exists():
     raise ImportError(
-        f"Backend repo not found at {BACKEND_DIR}. Clone UIUC-AgriRobotics-2026 next to this folder "
-        f"or set AGRI_BACKEND_DIR.")
+        f"Localization backend not found: {BACKEND_DIR / 'src' / 'pipeline.py'} is missing. "
+        f"Run the app from the project root, or unset AGRI_BACKEND_DIR.")
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-# --- teammate backend (imported, never modified) ----------------------------
+# --- localization backend (src/, imported, never modified here) -------------
 from src.data_loader import (CITRUSFARM_GPS_LEVER_ARM, CITRUSFARM_SEQUENCES, PROCESSED_DIR, RAW_DIR,  # noqa: E402
                              DataUnavailableError,
                              SensorStreams, build_citrusfarm_sequence, list_processed_sequences, load_processed)

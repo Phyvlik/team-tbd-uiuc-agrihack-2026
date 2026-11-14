@@ -1,10 +1,10 @@
 """Orchard Robot Localization — Mission Control dashboard (UI layer).
 
-Run (from this folder):
-    ..\\UIUC-AgriRobotics-2026\\.venv\\Scripts\\python -m streamlit run app.py
+Run (from the project root):
+    .venv\\Scripts\\python -m streamlit run app.py
 
-All estimation, simulation and safety logic is imported read-only from the
-team backend repo (see dashboard/backend.py).
+All estimation, simulation and safety logic comes from the localization
+backend in src/ (see dashboard/backend.py).
 """
 import streamlit as st
 

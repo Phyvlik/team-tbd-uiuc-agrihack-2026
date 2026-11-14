@@ -4,7 +4,7 @@ Sources
 -------
 * ``from_experiment`` — the backend pipeline (run_experiment) on a SensorStreams.
 * ``from_csv``        — a teammate's run file (schema below). Drop files into
-  ``team_runs/`` in this app folder, or ``<backend>/results/runs/``.
+  ``team_runs/`` or ``results/runs/`` (both in the project root).
 
 Teammate CSV schema (one row per estimate; only the first three are required)
 ---------------------------------------------------------------------------

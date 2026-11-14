@@ -1,6 +1,6 @@
-"""Headless UI tests (Streamlit AppTest). Run from this folder:
+"""Headless UI tests (Streamlit AppTest). Run from the project root:
 
-    ..\\UIUC-AgriRobotics-2026\\.venv\\Scripts\\python -m pytest -q
+    .venv\\Scripts\\python -m pytest -q
 """
 from pathlib import Path
 
@@ -100,12 +100,25 @@ def test_engineer_thresholds_change_monitor():
     assert "trusted ≤ 0.5 m · stop > 2.0 m" in " ".join(str(d.value) for d in at.dataframe)
 
 
-def test_ui_only_writes_to_its_own_cache():
-    """The UI imports the team backend read-only. The only file writes are the live
-    C1–C4 tables (.cache/) and Rerun recordings (recordings/), both in this app folder."""
+def test_backend_and_data_resolve_inside_project(monkeypatch):
+    """One project folder: src/, data/ and results/ are found relative to the project root,
+    with no sibling checkout needed."""
+    monkeypatch.delenv("AGRI_BACKEND_DIR", raising=False)
+    import src.data_loader as dl
+    import src.pipeline
     from dashboard import backend as be
     app_dir = Path(APP).parent
-    assert be.BACKEND_DIR != app_dir and be.CACHE_DIR.parent == app_dir
+    assert be.APP_DIR == app_dir and be.RESULTS_DIR == app_dir / "results"
+    assert Path(src.pipeline.__file__).resolve().parents[1] == app_dir
+    assert dl.RAW_DIR == app_dir / "data" / "raw" and dl.PROCESSED_DIR == app_dir / "data" / "processed"
+
+
+def test_ui_only_writes_to_its_own_cache():
+    """The UI imports the backend (src/) read-only. The only file writes are the live
+    C1–C4 tables (.cache/) and Rerun recordings (recordings/), both in the project folder."""
+    from dashboard import backend as be
+    app_dir = Path(APP).parent
+    assert be.CACHE_DIR.parent == app_dir
     writers = ("to_csv(", "write_text(", "write_bytes(", ".mkdir(")
     for f in list((app_dir / "dashboard").glob("*.py")) + list((app_dir / "views").glob("*.py")):
         src = f.read_text(encoding="utf-8")

@@ -339,7 +339,7 @@ with tabs[4]:
         st.caption("GPS rejections: none in this run (enable Multipath to test the consistency gate).")
 
 with tabs[5]:
-    st.markdown("Teammate runs are read from `team_runs/` (this app) or `UIUC-AgriRobotics-2026/results/runs/` "
+    st.markdown("Teammate runs are read from `team_runs/` or `results/runs/` in the project folder "
                 "via the data adapter (`dashboard/adapter.py`, schema in its docstring). Nothing is inferred.")
     team_runs, errs = ad.load_team_runs(None)
     ours = ad.from_experiment(key, be.METHOD_LABEL[ss.method], res)
@@ -379,6 +379,6 @@ with tabs[6]:
         ("Trees (illustrative)", f"{len(orchard.trees)} · {orchard.origin}"),
         ("Spray (simulated, full run)", f"{(sp == orc.TREATED).sum()} treated · {(sp == orc.MISSED).sum()} missed · "
                                         f"{(sp == orc.DOUBLE).sum()} double"),
-        ("Backend repo", str(be.BACKEND_DIR)),
+        ("Backend code", "src/ in the project folder" if be.BACKEND_DIR == be.APP_DIR else str(be.BACKEND_DIR)),
     ], columns=["item", "value"])
     ui.df_table(src)
