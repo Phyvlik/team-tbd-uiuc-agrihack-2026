@@ -308,3 +308,237 @@ def load_summaries(folder: Path = TEAM_DIR, inv: Inventory | None = None) -> dic
 def primary(df: pd.DataFrame) -> pd.DataFrame:
     """Rows for the presentation comparison: excludes 'Fixed slip from 02 (no learning)'."""
     return df[~df.setup.isin(EXCLUDED_SETUPS)].reset_index(drop=True)
+
+
+# =========================================================== decision rules ===
+# The teammate's documented rules, applied to the supplied columns only.
+
+SAFE, PRODUCTIVE = "Safe", "Productive"
+MODES = (SAFE, PRODUCTIVE)
+GO, SLOW, STOP = "GO", "SLOW", "STOP"
+ACTION_LEVEL = {GO: 0, SLOW: 1, STOP: 2}
+SLOW_MARGIN_M = 5.0
+
+# reason codes (text in reason_text)
+R_WORKER_INSIDE, R_LOST_SAFE, R_CONFIDENCE, R_WORKER_NEAR, R_CLEAR = (
+    "worker_inside_bubble", "lost_safe_mode", "confidence_reduced", "worker_near", "clear")
+
+CAPABILITY_LIMITS = (("Drive between rows", 1.0), ("Spray each row", 3.0),
+                     ("Give each tree its own dose", 2.0), ("Map individual trees", 0.3))
+
+
+def worker_visible(crew: pd.DataFrame, t) -> np.ndarray:
+    """(n_workers, n_times) mask: visible from t_outage_start through crew.t + 15 s."""
+    t = np.atleast_1d(np.asarray(t, float))
+    return (crew.t_outage_start.to_numpy()[:, None] <= t[None]) & \
+           (t[None] <= crew.t.to_numpy()[:, None] + WORKER_VISIBLE_AFTER_S)
+
+
+def worker_distances(run: TeamRun) -> tuple[np.ndarray, np.ndarray]:
+    """Distance from the ESTIMATED robot position to the nearest visible simulated worker, per row.
+    NaN (and index -1) when no worker is visible: never a made-up distance."""
+    d = run.dash
+    n = len(d)
+    dist, idx = np.full(n, np.nan), np.full(n, -1)
+    if not len(run.crew):
+        return dist, idx
+    vis = worker_visible(run.crew, d.t.to_numpy())
+    for k, w in enumerate(run.crew.itertuples()):
+        dk = np.hypot(d.x_est.to_numpy() - w.x, d.y_est.to_numpy() - w.y)
+        better = vis[k] & (np.isnan(dist) | (dk < dist))
+        dist[better], idx[better] = dk[better], k
+    return dist, idx
+
+
+def decide_arrays(state, bubble, dist, mode: str) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorised rules. Precedence STOP > SLOW > GO.
+
+    Safe:        STOP if dist < bubble or state == 2; SLOW if state >= 1 or dist < bubble + 5; else GO
+    Productive:  STOP if dist < bubble;               SLOW if state >= 1 or dist < bubble + 5; else GO
+    A missing worker (NaN distance) never triggers a worker rule."""
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}")
+    state, bubble, dist = (np.atleast_1d(np.asarray(v, float)) for v in (state, bubble, dist))
+    has = np.isfinite(dist)
+    inside = has & (dist < bubble)
+    near = has & (dist < bubble + SLOW_MARGIN_M)
+    lost_stop = (state == 2) if mode == SAFE else np.zeros(len(state), bool)
+    action = np.select([inside | lost_stop, (state >= 1) | near], [STOP, SLOW], GO)
+    code = np.select([inside, lost_stop, state >= 1, near], [R_WORKER_INSIDE, R_LOST_SAFE, R_CONFIDENCE, R_WORKER_NEAR],
+                     R_CLEAR)
+    return action, code
+
+
+def decide(state: int, bubble: float, dist: float | None, mode: str) -> tuple[str, str]:
+    a, c = decide_arrays([state], [bubble], [np.nan if dist is None else dist], mode)
+    return str(a[0]), str(c[0])
+
+
+def decision_series(run: TeamRun, mode: str) -> pd.DataFrame:
+    dist, idx = worker_distances(run)
+    d = run.dash
+    action, code = decide_arrays(d.state, d.bubble_m, dist, mode)
+    return pd.DataFrame({"t": d.t, "action": action, "level": [ACTION_LEVEL[a] for a in action], "code": code,
+                         "dist_m": dist, "worker": idx, "bubble_m": d.bubble_m})
+
+
+def reason_text(code: str, state: int, dist: float | None, bubble: float, mode: str) -> str:
+    if code == R_WORKER_INSIDE:
+        return f"simulated worker {dist:.1f} m away, inside the {bubble:.1f} m safety bubble"
+    if code == R_LOST_SAFE:
+        return "position confidence lost (Safe mode stops)"
+    if code == R_CONFIDENCE:
+        base = ("position confidence degraded" if state == 1
+                else "position confidence lost (Productive mode keeps going slowly)")
+        if dist is not None and np.isfinite(dist) and dist < bubble + SLOW_MARGIN_M:
+            base += f"; simulated worker {dist:.1f} m away"
+        return base
+    if code == R_WORKER_NEAR:
+        return f"simulated worker {dist:.1f} m away, within bubble + {SLOW_MARGIN_M:.0f} m"
+    return "position trusted, no simulated worker nearby"
+
+
+def capabilities(two_sigma: float) -> list[tuple[str, bool, float]]:
+    """Teammate's prototype checklist: (task, allowed, 2*sigma limit in m)."""
+    return [(name, bool(two_sigma <= lim), lim) for name, lim in CAPABILITY_LIMITS]
+
+
+def tree_status_at(run: TeamRun, t: float, show_final: bool = False) -> np.ndarray:
+    """Per-tree label at replay time t: the supplied final status once revealed, else 'unreached'.
+    progressive: revealed after the reference path's closest approach; final_only: only on request."""
+    status = run.trees.status.to_numpy().astype(object)
+    if show_final:
+        return status
+    if run.tree_reveal == "progressive":
+        return np.where(run.tree_t_pass <= t, status, "unreached")
+    return np.full(len(status), "unreached", dtype=object)
+
+
+# ----------------------------------------------------------------- events --
+
+def events(run: TeamRun, dec: pd.DataFrame) -> pd.DataFrame:
+    """Timestamped events supported by the data: outages, state changes, workers, STOP transitions."""
+    rows = []
+    for a, b in run.outages:
+        rows.append((a, "gps", "GPS lost", "DEGRADED"))
+        if b < run.t_max:
+            rows.append((b, "gps", "GPS restored", "TRUSTED"))
+    t, lv = run.dash.t.to_numpy(), run.dash.state.to_numpy()
+    lab = {0: ("Trusted again", "TRUSTED"), 1: ("Degraded", "DEGRADED"), 2: ("Lost", "STOP")}
+    for i in np.flatnonzero(np.diff(lv) != 0) + 1:
+        rows.append((t[i], "state", *lab[int(lv[i])]))
+    for w in run.crew.itertuples():
+        rows.append((w.t_outage_start, "crew", "Worker appears (simulated)", "DEGRADED"))
+    al = dec.level.to_numpy()
+    for i in np.flatnonzero(np.diff(al) != 0) + 1:
+        if al[i] == 2:
+            rows.append((t[i], "action", "STOP recommended", "STOP"))
+        elif al[i] == 0 and al[i - 1] == 2:
+            rows.append((t[i], "action", "Back to GO", "TRUSTED"))
+    ev = pd.DataFrame(rows, columns=["t_rel", "kind", "label", "state"]).sort_values("t_rel", kind="stable")
+    ev = ev[~((ev.label == ev.label.shift()) & (ev.t_rel - ev.t_rel.shift() < 3))]
+    return ev.reset_index(drop=True)
+
+
+def next_time(times, now: float, lead: float = 0.0) -> float | None:
+    """First event time after now + 0.5 s (so repeated clicks advance), minus an optional lead."""
+    later = [float(x) for x in times if x - lead > now + 0.5]
+    return min(later) - lead if later else None
+
+
+# --------------------------------------------------------------- situation --
+
+@dataclass
+class Situation:
+    t: float
+    i: int
+    state: int
+    sigma: float
+    two_sigma: float
+    gps_out: bool
+    outage_elapsed: float | None      # s since the current outage began
+    since_restored: float | None      # s since GPS came back (last outage)
+    bubble: float
+    slip_scale: float
+    error: float
+    action: str
+    code: str
+    dist: float | None
+    worker: int | None
+    mode: str
+
+    @property
+    def state_name(self) -> str:
+        return STATE_NAMES[self.state]
+
+    @property
+    def reason(self) -> str:
+        return reason_text(self.code, self.state, self.dist, self.bubble, self.mode)
+
+
+def situation(run: TeamRun, dec: pd.DataFrame, t: float, mode: str) -> Situation:
+    i = run.index_at(t)
+    r = run.dash.iloc[i]
+    now = float(r.t)
+    cur = [a for a, b in run.outages if a <= now < b]
+    done = [b for a, b in run.outages if b <= now]
+    dist = float(dec.dist_m.iloc[i])
+    return Situation(now, i, int(r.state), float(r.sigma), 2 * float(r.sigma), bool(r.gps_out),
+                     now - cur[0] if cur else None, now - done[-1] if done and not cur else None,
+                     float(r.bubble_m), float(r.slip_scale), float(r.error_m), str(dec.action.iloc[i]),
+                     str(dec.code.iloc[i]), dist if np.isfinite(dist) else None,
+                     int(dec.worker.iloc[i]) if dec.worker.iloc[i] >= 0 else None, mode)
+
+
+# Same tuple layout as dashboard/ops.ALERTS: (icon, state, EN, EN action, ES, ES action)
+ALERTS = {
+    "stop_worker": ("■", "STOP", "Simulated worker inside the robot's safety bubble.",
+                    "STOP recommended. Worker: step away from the robot.",
+                    "Trabajador simulado dentro de la zona de seguridad del robot.",
+                    "Se recomienda DETENER el robot. Trabajador: aléjese del robot."),
+    "stop_lost": ("■", "STOP", "Position confidence lost.",
+                  "STOP recommended until GPS returns or someone checks the robot's position.",
+                  "Se perdió la confianza en la posición.",
+                  "Se recomienda DETENER el robot hasta que vuelva el GPS o alguien verifique su posición."),
+    "lost_productive": ("▲", "DEGRADED", "Position confidence lost. Productive mode keeps the robot moving slowly.",
+                        "Watch the robot closely and be ready to stop it.",
+                        "Se perdió la confianza en la posición. El modo productivo sigue avanzando despacio.",
+                        "Vigile el robot de cerca y esté listo para detenerlo."),
+    "gps_lost": ("▲", "DEGRADED", "GPS signal lost. The robot estimates its position from wheels and motion sensors.",
+                 "Expect position uncertainty to grow. Reduce speed.",
+                 "Se perdió la señal GPS. El robot calcula su posición con las ruedas y los sensores de movimiento.",
+                 "La incertidumbre de posición va a aumentar. Reduzca la velocidad."),
+    "uncertainty": ("▲", "DEGRADED", "Position uncertainty is above the 0.3 m target.",
+                    "Slow down and avoid rows where people are working.",
+                    "La incertidumbre de posición supera el objetivo de 0.3 m.",
+                    "Reduzca la velocidad y evite las hileras donde hay personas trabajando."),
+    "worker_near": ("▲", "DEGRADED", "Simulated worker near the robot.",
+                    "Robot slows down. Worker: keep clear of the robot.",
+                    "Trabajador simulado cerca del robot.",
+                    "El robot reduce la velocidad. Trabajador: manténgase alejado del robot."),
+    "restored": ("●", "TRUSTED", "GPS restored. Position confidence is recovering.",
+                 "Confirm the robot is in the right row before resuming full speed.",
+                 "GPS restablecido. La confianza en la posición se está recuperando.",
+                 "Confirme que el robot está en la hilera correcta antes de volver a la velocidad normal."),
+    "ok": ("●", "TRUSTED", "All systems normal. Position is trusted.", "No action needed.",
+           "Todo normal. La posición es confiable.", "No se requiere ninguna acción."),
+}
+
+
+def alert_keys(s: Situation) -> list[str]:
+    keys = []
+    if s.code == R_WORKER_INSIDE:
+        keys.append("stop_worker")
+    if s.code == R_LOST_SAFE:
+        keys.append("stop_lost")
+    elif s.state == 2 and s.mode == PRODUCTIVE:
+        keys.append("lost_productive")
+    if s.gps_out:
+        keys.append("gps_lost")
+    if s.state == 1:
+        keys.append("uncertainty")
+    if s.dist is not None and s.dist < s.bubble + SLOW_MARGIN_M and s.code != R_WORKER_INSIDE:
+        keys.append("worker_near")
+    if s.since_restored is not None and s.since_restored <= 10 and not s.gps_out:
+        keys.append("restored")
+    return keys or ["ok"]

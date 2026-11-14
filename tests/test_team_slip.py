@@ -152,6 +152,91 @@ def test_summaries_schema_and_primary_filter():
     assert set(s["spray_results"].seq) == set(SEQS)
 
 
+@pytest.mark.parametrize("state,bubble,dist,safe,productive", [
+    (0, 2.1, None, "GO", "GO"),            # nothing going on
+    (0, 2.1, 10.0, "GO", "GO"),            # worker beyond bubble + 5
+    (0, 2.1, 6.0, "SLOW", "SLOW"),         # worker within bubble + 5
+    (0, 2.1, 2.0, "STOP", "STOP"),         # worker inside the bubble
+    (1, 3.0, None, "SLOW", "SLOW"),        # degraded
+    (2, 5.0, None, "STOP", "SLOW"),        # lost: Safe stops, Productive slows
+    (2, 5.0, 4.9, "STOP", "STOP"),         # worker inside bubble stops in both modes
+    (1, 3.0, 2.99, "STOP", "STOP"),
+])
+def test_decision_rules(state, bubble, dist, safe, productive):
+    assert ts.decide(state, bubble, dist, ts.SAFE)[0] == safe
+    assert ts.decide(state, bubble, dist, ts.PRODUCTIVE)[0] == productive
+
+
+def test_missing_worker_is_not_zero_distance():
+    assert ts.decide(0, 2.1, None, ts.SAFE) == ("GO", ts.R_CLEAR)
+    assert ts.decide(0, 2.1, float("nan"), ts.PRODUCTIVE) == ("GO", ts.R_CLEAR)
+    with pytest.raises(ValueError):
+        ts.decide(0, 2.1, None, "Aggressive")
+
+
+def test_worker_visibility_window(run02):
+    w = run02.crew.iloc[0]
+    t = np.array([w.t_outage_start - 0.1, w.t_outage_start, w.t, w.t + 15.0, w.t + 15.1])
+    assert ts.worker_visible(run02.crew.iloc[[0]], t)[0].tolist() == [False, True, True, True, False]
+
+
+def test_worker_distance_uses_estimate_and_nearest_visible(run02):
+    dist, idx = ts.worker_distances(run02)
+    d, w = run02.dash, run02.crew.iloc[0]
+    k = int(np.searchsorted(d.t, w.t))
+    assert idx[k] == 0 and dist[k] == pytest.approx(np.hypot(d.x_est[k] - w.x, d.y_est[k] - w.y))
+    j = int(np.searchsorted(d.t, 30.0))
+    assert np.isnan(dist[j]) and idx[j] == -1
+
+
+def test_decision_series_matches_scalar_rules(run02):
+    for mode in ts.MODES:
+        dec = ts.decision_series(run02, mode)
+        for i in range(0, len(dec), 97):
+            dd = dec.dist_m.iloc[i]
+            assert dec.action.iloc[i] == ts.decide(int(run02.dash.state[i]), float(run02.dash.bubble_m[i]),
+                                                   None if np.isnan(dd) else float(dd), mode)[0]
+    safe, prod = ts.decision_series(run02, ts.SAFE), ts.decision_series(run02, ts.PRODUCTIVE)
+    assert (safe.level >= prod.level).all() and (safe.level > prod.level).any()
+
+
+def test_capabilities_thresholds():
+    assert [ok for _, ok, _ in ts.capabilities(0.25)] == [True, True, True, True]
+    assert [ok for _, ok, _ in ts.capabilities(1.2)] == [False, True, True, False]
+    assert [ok for _, ok, _ in ts.capabilities(2.5)] == [False, True, False, False]
+    assert [ok for _, ok, _ in ts.capabilities(3.5)] == [False, False, False, False]
+
+
+def test_tree_status_timing(run02):
+    assert (ts.tree_status_at(run02, -1.0) == "unreached").all()
+    assert (ts.tree_status_at(run02, run02.t_max) == run02.trees.status.to_numpy()).all()
+    mid = ts.tree_status_at(run02, 100.0)
+    assert ((mid == "unreached") == (run02.tree_t_pass > 100.0)).all()
+    r7 = ts.load_run("07_14B_Jackal")
+    assert (ts.tree_status_at(r7, r7.t_max) == "unreached").all()
+    assert (ts.tree_status_at(r7, 0.0, show_final=True) == r7.trees.status.to_numpy()).all()
+
+
+def test_events_and_situation_02(run02):
+    dec = ts.decision_series(run02, ts.SAFE)
+    ev = ts.events(run02, dec)
+    assert (ev.label == "GPS lost").sum() == 4 and (ev.label == "GPS restored").sum() == 4
+    assert (ev.label == "Worker appears (simulated)").sum() == 4 and (ev.label == "STOP recommended").any()
+    assert ev.t_rel.is_monotonic_increasing
+    a, b = run02.outages[0]
+    s = ts.situation(run02, dec, a + 5.0, ts.SAFE)
+    assert s.gps_out and abs(s.outage_elapsed - 5.0) < 0.2 and s.since_restored is None
+    assert "gps_lost" in ts.alert_keys(s)
+    s2 = ts.situation(run02, dec, b + 3.0, ts.SAFE)
+    assert not s2.gps_out and s2.since_restored is not None and "restored" in ts.alert_keys(s2)
+    s0 = ts.situation(run02, dec, 20.0, ts.SAFE)
+    assert (s0.action, s0.dist, ts.alert_keys(s0)) == ("GO", None, ["ok"])
+    w = run02.crew.iloc[0]
+    sw = ts.situation(run02, dec, float(w.t), ts.SAFE)
+    assert sw.action == "STOP" and sw.dist is not None and "stop_worker" in ts.alert_keys(sw)
+    assert ts.next_time(ev[ev.kind == "gps"].t_rel, 0.0) == pytest.approx(a)
+
+
 def test_reference_matches_citrusfarm_gt():
     """x_true, y_true are the gt.csv reference on the same clock (needs the local CitrusFarm data)."""
     from src.data_loader import PROCESSED_DIR, load_processed
