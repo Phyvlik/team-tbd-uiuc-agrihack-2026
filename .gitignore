@@ -34,5 +34,5 @@ Thumbs.db
 /project-plan.pdf
 /challenge-requirements.pdf
 
-# Personal Claude Code settings (shared project settings live in .claude/settings.json)
-.claude/settings.local.json
+# Claude Code settings are local to each developer
+.claude/
