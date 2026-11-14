@@ -282,7 +282,7 @@ def load_run(sequence: str, folder: Path = TEAM_DIR, inv: Inventory | None = Non
         agree = float(np.mean(d.gps_out.to_numpy()[k] == trees.during_outage.to_numpy()))
     else:
         agree = 0.0
-    checks.append(f"tree timing: the closest-approach rule reproduces the teammate's during_outage flag for "
+    checks.append(f"tree timing: the closest-approach rule reproduces the exported during_outage flag for "
                   f"{100 * agree:.1f} % of {len(trees)} trees")
     return TeamRun(sequence, d.reset_index(drop=True), trees.reset_index(drop=True), crew, outs, checks, emax,
                    mism, t_pass, agree, files={k: str(v) for k, v in files.items()})
