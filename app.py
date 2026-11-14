@@ -31,6 +31,7 @@ pages = [
     st.Page("views/worker_safety.py", title="Worker Safety", icon=":material/engineering:", url_path="worker-safety"),
 ]
 nav = st.navigation(pages, position="top")
+st.session_state["_current_page"] = nav.title   # read by fragments to detect a late rerun after a page switch
 
 # ---------------------------------------------------------------- sidebar --
 with st.sidebar:
@@ -46,6 +47,7 @@ with st.sidebar:
                          help="Operator: status, alerts, map and actions. Engineer: adds trajectory comparison, "
                               "fusion diagnostics, localization errors and charts.")
     st.segmented_control("Localization results", list(team_ui.SOURCES), key="results_src", required=True,
+                         on_change=lambda: st.session_state.update(playing=None, demo_end=None),
                          help="Backend EKF: our estimator runs live on the selected CitrusFarm data. Team Slip-Learning "
                               "Results: exported trajectories from the team's slip-learning localization (odometry + IMU + GPS with learned "
                               "wheel-slip correction) replayed as supplied.")

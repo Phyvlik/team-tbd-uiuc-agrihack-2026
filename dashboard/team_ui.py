@@ -21,6 +21,7 @@ from . import charts as ch
 from . import components as ui
 from . import opui, ops
 from . import orchard as orc
+from . import replay
 from . import scene3d
 from . import state as S
 from . import team_slip as ts
@@ -280,13 +281,12 @@ def not_available() -> bool:
 
 def live_panel():
     ss = st.session_state
+    if not active() or ss.get("_current_page", "Mission Control") != "Mission Control":
+        # A late rerun of this fragment after a source or page switch: redraw the page instead.
+        st.rerun()
     seq, mode = ss.team_seq, ss.team_mode
     run, dec = load(seq), decisions(seq, mode)
-    ui.advance(PAGE, TKEY, run.t_max, 0.5 * ss.speed)
     S.clamp(TKEY, 0.0, run.t_max)
-    t = float(ss[TKEY])
-    s = ts.situation(run, dec, t, mode)
-    ev = ts.events(run, dec)
     eng = S.is_engineer()
     show_final = bool(ss.team_show_final) and run.tree_reveal == "final_only"
 
@@ -299,14 +299,12 @@ def live_panel():
                               **S.bind("viz", "team"))
         bar.segmented_control("Camera", ["Follow robot", "Whole orchard"], required=True,
                               label_visibility="collapsed", **S.bind("view3d", "team"))
-        if ss.viz == "3D orchard":
-            fig = scene_figure(seq, t, mode, show_final=show_final, show_reference=eng,
-                               overview=ss.view3d == "Whole orchard")
-            st.plotly_chart(fig, key="team_3d", theme=None, config={"displaylogo": False, "displayModeBar": False})
-        else:
-            fig = map_figure(seq, t, mode, show_final=show_final, show_reference=eng,
-                             follow=18.0 if ss.view3d == "Follow robot" else None)
-            st.plotly_chart(fig, key="team_map", theme=None, config={"displaylogo": False, "scrollZoom": True})
+        # client-side player: animates in the browser and reports its time back (dashboard/replay.py)
+        replay.player(PAGE, TKEY, replay.team_scene(seq, mode, eng, show_final),
+                      view="3d" if ss.viz == "3D orchard" else "2d", follow=ss.view3d == "Follow robot")
+        t = float(ss[TKEY])                 # the player's time: everything below uses the same clock
+        s = ts.situation(run, dec, t, mode)
+        ev = ts.events(run, dec)
         labels = ts.tree_status_at(run, t, show_final)
         st.markdown(
             "<div class='legend'>"
@@ -800,7 +798,7 @@ def mission_control():
     header(seq, eng)
     run = load(seq)
     toolbar(run)
-    st.fragment(run_every=0.5 if ss.playing == PAGE else None)(live_panel)()
+    st.fragment(live_panel)()          # reruns come from the player's clock reports, not a timer
     if eng:
         engineer(seq)
     else:

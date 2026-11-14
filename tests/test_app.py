@@ -77,7 +77,7 @@ def test_operator_panel_has_metrics_checklist_and_bilingual_alerts():
     for needle in ("What the robot can do now", "GPS status", "Position uncertainty", "Robot speed",
                    "Stop recommended", "GPS no disponible"):
         assert needle in txt, needle
-    assert len(at.get("plotly_chart")) >= 1, "3D orchard figure missing"
+    assert len(at.get("bidi_component")) == 1, "3D orchard replay player missing"   # dashboard/replay.py
 
 
 def test_all_three_visualisations_render():

@@ -16,6 +16,7 @@ from dashboard import charts as ch
 from dashboard import components as ui
 from dashboard import opui, ops
 from dashboard import orchard as orc
+from dashboard import replay
 from dashboard import rerun_export as rx
 from dashboard import scene3d
 from dashboard import scenario as scn
@@ -91,11 +92,13 @@ def rerun_operator_embed(sit):
 
 
 def live_panel():
-    ui.advance("mc", "mc_t", t_max, 0.5 * ss.speed)
+    if team_ui.active() or ss.get("_current_page", "Mission Control") != "Mission Control":
+        # A late rerun of this fragment (a clock report from the player that was on screen before
+        # a source or page switch) must not draw the EKF panel into another view: redraw the page.
+        st.rerun()
+    if ss.viz == "Rerun 3D":                # no client-side player in this view: server clock (time-based)
+        ui.advance("mc", "mc_t", t_max, ss.speed)
     S.clamp("mc_t", 0.0, t_max)
-    t_now = t0 + float(ss.mc_t)
-    i = be.at_time(est, t_now)
-    sit = ops.situation(est, states, gps_series, dec, i, t0, res.outages_abs)
 
     left, right = st.columns([2.05, 1], gap="medium")
     with left:
@@ -110,11 +113,19 @@ def live_panel():
         elif ss.viz == "2D map":
             bar.segmented_control("Map view", ["Follow robot", "Whole route"], required=True,
                                   label_visibility="collapsed", **S.bind("map_view", "mc"))
+        if ss.viz != "Rerun 3D":
+            bar.segmented_control("Speed", list(replay.SPEEDS), format_func=lambda v: f"{v}×", required=True,
+                                  label_visibility="collapsed", **S.bind("speed", "mc"))
+            # client-side player: animates in the browser and reports its time back (dashboard/replay.py)
+            crew = (float(ss.ws_min_buffer), float(ss.ws_k), float(ss.ws_slow), 2.5) if ss.show_crew else None
+            replay.player("mc", "mc_t", replay.ekf_scene(key, ss.method, outages, jumps, trusted, stop, crew, eng),
+                          view="3d" if ss.viz == "3D orchard" else "2d",
+                          follow=(ss.view3d if ss.viz == "3D orchard" else ss.map_view) == "Follow robot")
+        t_now = t0 + float(ss.mc_t)             # the player's time: everything below uses the same clock
+        i = be.at_time(est, t_now)
+        sit = ops.situation(est, states, gps_series, dec, i, t0, res.outages_abs)
         if ss.viz == "3D orchard":
             status = orc.spray_status(len(orchard.trees), spray_ev, t_pass, t_now)
-            fig = scene3d.orchard_scene(streams, res, t_now, orchard, status, dec=dec, zones=zones,
-                                        show_reference=eng, height=470, overview=ss.view3d == "Whole orchard")
-            st.plotly_chart(fig, key="mc_3d", theme=None, config={"displaylogo": False, "displayModeBar": False})
             counts = {k: int((status == k).sum()) for k in (orc.TREATED, orc.MISSED, orc.DOUBLE)}
             st.markdown(
                 "<div class='legend'>"
@@ -130,15 +141,6 @@ def live_panel():
                   f"{opui.kind('simulated', 'Simulated spray')} sprayer follows the estimated position "
                   f"(rules in dashboard/orchard.py). Robot drawn 2× size.</div>", unsafe_allow_html=True)
         elif ss.viz == "2D map":
-            follow = 16.0 if ss.map_view == "Follow robot" else None
-            extra = []
-            for z in zones or []:
-                zx, zy = ch.circle(z.x, z.y, z.radius)
-                extra.append(ch.go.Scatter(x=zx, y=zy, mode="lines", fill="toself", fillcolor="rgba(238,242,239,0.1)",
-                                           line=dict(color="#eef2f5", dash="dot"), hoverinfo="skip"))
-            fig = ch.trajectory_map(streams, res, t_now, height=470, follow=follow, extra=extra,
-                                    show_reference=eng, uirevision=None if follow else f"mc-{key}")
-            st.plotly_chart(fig, key="mc_map", theme=None, config={"displaylogo": False, "scrollZoom": True})
             ui.status_legend([("True path (Engineer only)", "#c3c2b7", "dot"), ("GPS fixes", "#3987e5", "dot")],
                              map_items=True)
         else:
@@ -174,7 +176,8 @@ def live_panel():
         st.caption("Spanish drafted for the demo — pending native-speaker review.")
 
 
-st.fragment(run_every=0.5 if ss.playing == "mc" else None)(live_panel)()
+# 3D orchard / 2D map: reruns come from the player's clock reports. Rerun 3D keeps a timer.
+st.fragment(run_every=0.5 if (ss.playing == "mc" and ss.viz == "Rerun 3D") else None)(live_panel)()
 
 if not eng:
     st.markdown("<div class='small' style='margin-top:6px'>Switch to <b>Engineer</b> mode (sidebar) for the Rerun "
