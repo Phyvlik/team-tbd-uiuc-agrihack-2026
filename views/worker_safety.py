@@ -105,7 +105,7 @@ def light_html(decision: str) -> str:
 
 
 def live():
-    ui.advance("ws", "ws_t", t_max, 0.5 * ss.speed)
+    ui.advance("ws", "ws_t", t_max, ss.speed)
     t_now = t0 + float(ss.ws_t)
     i = be.at_time(dec, t_now)
     row = dec.iloc[i]

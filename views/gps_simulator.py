@@ -63,7 +63,7 @@ sim_events = ops.events(est, states, ops.gps_status_series(est), None, res.outag
 
 
 def replay():
-    ui.advance("sim", "sim_t", hi, 0.25 * ss.speed)
+    ui.advance("sim", "sim_t", hi, ss.speed)
     S.clamp("sim_t", lo, hi)
     t_now = t0 + float(ss.sim_t)
     i = be.at_time(est, t_now)

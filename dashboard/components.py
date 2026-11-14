@@ -6,6 +6,7 @@ state is never conveyed by colour alone.
 from __future__ import annotations
 
 import html
+import time
 
 import numpy as np
 import pandas as pd
@@ -240,8 +241,15 @@ def playback_controls(page: str, key: str, t_max: float, step: float = 0.5,
     from . import state as S  # local import to avoid cycle
     S.clamp(key, 0.0, float(t_max))
     playing = st.session_state.playing == page
-    st.slider(label, 0.0, float(t_max), step=step, format="%.1f s", label_visibility="collapsed",
-              **S.bind(key, page))
+    if playing:
+        # Read-only while playing. An editable slider here sends its previous (stale) value back
+        # with the next rerun, which Streamlit reports as a change and the replay jumps backwards.
+        cur = float(st.session_state[key])
+        st.progress(min(max(cur / float(t_max), 0.0), 1.0) if t_max else 0.0,
+                    text=f"{label}: {cur:.1f} s of {float(t_max):.0f} s · pause to scrub")
+    else:
+        st.slider(label, 0.0, float(t_max), step=step, format="%.1f s", label_visibility="collapsed",
+                  **S.bind(key, page))
     bar = st.container(horizontal=True, gap="small", vertical_alignment="center")
     c = [bar] * (2 + len(jump_to or []))
     if c[0].button("⏸ Pause" if playing else "▶ Play", key=f"pp_{page}",
@@ -262,16 +270,31 @@ def playback_controls(page: str, key: str, t_max: float, step: float = 0.5,
     return bar
 
 
-def advance(page: str, key: str, t_max: float, dt: float):
-    if st.session_state.playing == page:
-        end = st.session_state.get("demo_end")
-        limit = min(t_max, end) if end is not None else t_max
-        nv = float(st.session_state[key]) + dt
-        if nv >= limit:
-            nv = limit
-            st.session_state.playing = None
-            st.session_state.demo_end = None
-        st.session_state[key] = nv
+MAX_STEP_S = 1.0   # wall seconds credited per tick at most (a stalled or hidden tab must not leap ahead)
+
+
+def advance(page: str, key: str, t_max: float, speed: float):
+    """Server-side playback clock for timer-driven pages: replay time advances by
+    ``speed x real elapsed wall time`` since the previous tick, so 1x/2x/4x/10x mean the
+    same simulation speed however long a rerun takes. (Mission Control's 3D orchard and
+    2D map use the client-side player in dashboard/replay.py instead.)"""
+    ss = st.session_state
+    stamp = f"_adv_wall_{page}"
+    now = time.monotonic()
+    if ss.playing != page:
+        ss[stamp] = None
+        return
+    last = ss.get(stamp)
+    ss[stamp] = now
+    elapsed = 0.0 if last is None else min(now - last, MAX_STEP_S)
+    end = ss.get("demo_end")
+    limit = min(t_max, end) if end is not None else t_max
+    nv = float(ss[key]) + float(speed) * elapsed
+    if nv >= limit:
+        nv = limit
+        ss.playing = None
+        ss.demo_end = None
+    ss[key] = nv
 
 
 def df_table(df: pd.DataFrame, height: int | None = None):
