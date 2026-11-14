@@ -457,6 +457,16 @@ def rerun_exe() -> str | None:
 
 
 _PROCS: dict[str, subprocess.Popen] = {}
+_SERVED: dict[str, tuple[str, float]] = {}   # slot -> (recording path, mtime) the viewer currently serves
+
+
+def served(slot: str, rrd: Path | str) -> bool:
+    """True if the web viewer in ``slot`` is running and serves exactly this recording file
+    (same path and same modification time), so the page never embeds a stale recording."""
+    proc, cur = _PROCS.get(slot), _SERVED.get(slot)
+    p = Path(rrd)
+    return (proc is not None and proc.poll() is None and cur is not None and p.exists()
+            and cur == (str(p.resolve()), p.stat().st_mtime))
 
 
 def serve_web(rrd: Path, web_port: int = 9090, grpc_port: int = 9877, slot: str = "eng") -> str:
@@ -492,7 +502,11 @@ def serve_web(rrd: Path, web_port: int = 9090, grpc_port: int = 9877, slot: str 
         if not _free(web_port):
             break
         time.sleep(0.2)
-    return f"http://localhost:{web_port}/?url=rerun%2Bhttp%3A%2F%2Flocalhost%3A{grpc_port}%2Fproxy"
+    _SERVED[slot] = (str(Path(rrd).resolve()), Path(rrd).stat().st_mtime)
+    # the extra parameter changes the iframe address whenever the recording changes, so the
+    # browser reloads the viewer instead of keeping the previous recording on screen
+    tag = f"{Path(rrd).stem}-{int(Path(rrd).stat().st_mtime)}"
+    return f"http://localhost:{web_port}/?url=rerun%2Bhttp%3A%2F%2Flocalhost%3A{grpc_port}%2Fproxy&recording={tag}"
 
 
 def open_native(rrd: Path) -> None:
