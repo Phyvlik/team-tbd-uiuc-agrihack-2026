@@ -232,11 +232,15 @@ def from_csv(path: str | Path, sequence: str | None = None, method: str | None =
         checks=checks, verify_report=rep, source_file=str(path))
 
 
+NON_RUN_SUFFIXES = ("__orchard_geometry",)   # other drop-in files that share team_runs/
+
+
 def discover() -> list[Path]:
+    """Run CSVs in the team folders (orchard geometry files are not runs)."""
     out = []
     for d in TEAM_DIRS:
         if d.exists():
-            out += sorted(d.glob("*.csv"))
+            out += sorted(p for p in d.glob("*.csv") if not p.stem.endswith(NON_RUN_SUFFIXES))
     return out
 
 

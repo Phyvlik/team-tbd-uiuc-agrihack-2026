@@ -186,3 +186,12 @@ def test_estimator_covariance_is_not_modified():
     direct = run_experiment(s, ("odom", "imu", "gps"), OutageScenario([(100.0, 60.0)]))
     via_ui = be.experiment("06_14B_Jackal", ("odom", "imu", "gps"), ((100.0, 60.0),))
     assert np.array_equal(direct.estimate.r95.to_numpy(), via_ui.estimate.r95.to_numpy())
+
+
+def test_discover_skips_orchard_geometry(tmp_path, monkeypatch):
+    """team_runs/ also holds <SEQ>__orchard_geometry.csv; it must not be parsed as a run."""
+    from dashboard import adapter as ad
+    (tmp_path / "06_14B_Jackal__orchard_geometry.csv").write_text("x,y\n0,0\n")
+    (tmp_path / "06_14B_Jackal__my-method.csv").write_text("t,est_x,est_y\n0,0,0\n")
+    monkeypatch.setattr(ad, "TEAM_DIRS", [tmp_path])
+    assert [p.name for p in ad.discover()] == ["06_14B_Jackal__my-method.csv"]
