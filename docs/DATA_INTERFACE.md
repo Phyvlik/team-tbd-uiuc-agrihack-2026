@@ -51,7 +51,9 @@ Smallest useful full sequence: **06_14B_Jackal** (gt 0.3 MB, odom 12 MB, base 2.
 
 ## 4. Importing a teammate's trajectory CSV
 
-Use the **Data Import** page or:
+In the dashboard, drop run files into `team_runs/` and open Mission Control, Engineer mode, tab
+**Team data (adapter)** (format: "Teammate integration guide" in `README.md`). The adapter calls the
+same checks as this lower-level helper, which you can also use directly:
 
 ```python
 from src.teammate_import import import_file
