@@ -15,10 +15,14 @@ from dashboard import backend as be
 from dashboard import charts as ch
 from dashboard import components as ui
 from dashboard import state as S
+from dashboard import team_ui
 from dashboard.theme import CRIT, DECISION_STATE, GOOD, INK, STATE, WARN
 from src.coordinate_utils import interp_series
 
 ss = st.session_state
+if team_ui.active():          # Team Slip-Learning Results: teammate summary tables
+    team_ui.safety_page()
+    st.stop()
 key = ss.source
 streams = be.load_streams(key)
 info = be.source_info(key)

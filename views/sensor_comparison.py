@@ -12,10 +12,14 @@ from dashboard import backend as be
 from dashboard import charts as ch
 from dashboard import components as ui
 from dashboard import state as S
+from dashboard import team_ui
 from dashboard.theme import CONFIG_COLOR, GOOD
 from src.sensor_comparison import recommend  # teammate recommendation rule
 
 ss = st.session_state
+if team_ui.active():          # Team Slip-Learning Results: teammate summary tables
+    team_ui.cost_page()
+    st.stop()
 key = ss.source
 streams = be.load_streams(key)
 info = be.source_info(key)

@@ -14,6 +14,7 @@ from dashboard import backend as be
 from dashboard import charts as ch
 from dashboard import components as ui
 from dashboard import state as S
+from dashboard import team_ui
 from dashboard.theme import CRIT, GOOD, INK, WARN
 
 ss = st.session_state
@@ -29,6 +30,8 @@ ui.page_header(
     "Where is GPS likely to degrade under the canopy? Observed receiver quality along the route, and — where "
     "canopy imagery exists — a held-out model that predicts GPS dead zones before the robot gets there.",
     [ui.provenance_badge(info.provenance)] + ([] if av.get("canopy") else [ui.provenance_badge("ne")]))
+if team_ui.active():
+    team_ui.risk_map_notice()
 
 LEVEL_NAMES = {0: "Low risk", 1: "Elevated risk", 2: "High risk"}
 

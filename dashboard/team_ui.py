@@ -573,6 +573,181 @@ def engineer(seq: str):
         ], columns=["item", "origin"]))
 
 
+# ---------------------------------------------------------- results pages --
+
+SETUP_COLOR = {ts.PRIMARY_SETUPS[0]: SERIES[0], ts.PRIMARY_SETUPS[1]: SERIES[1], ts.PRIMARY_SETUPS[2]: SERIES[2],
+               "GPS always on (reference)": REF}
+SETUP_SENSORS = [  # qualitative only: no prices
+    (ts.PRIMARY_SETUPS[0], "wheel odometry, GPS", "Lowest", "no extra sensor"),
+    (ts.PRIMARY_SETUPS[1], "wheel odometry, IMU, GPS", "Low", "adds a low-cost IMU"),
+    (ts.PRIMARY_SETUPS[2], "wheel odometry, IMU, GPS", "Low (same hardware as row 2)",
+     "software only: learned wheel-slip correction"),
+]
+TEST_METRICS = {"worst": ("Worst error during outage (m)", "lower is better"),
+                "err_end": ("Error at outage end (m)", "lower is better"),
+                "time_within": ("Time within 0.3 m target (s)", "higher is better")}
+
+
+def _results_header(title: str, eyebrow: str, sub: str):
+    ui.page_header(eyebrow, title, sub, [ui.badge("TEAMMATE RESULTS", "real"),
+                                          opui.kind("computed", "Teammate batch results"),
+                                          opui.kind("simulated", "Simulated outages")])
+
+
+def _filters(df: pd.DataFrame, scope: str, groups: bool = False) -> pd.DataFrame:
+    c = st.columns(2 if groups else 1)
+    if groups:
+        g = c[1].multiselect("Group", sorted(df.group.unique()), default=sorted(df.group.unique()), key=f"{scope}_grp")
+        df = df[df.group.isin(g)]
+    seqs = sorted(df.seq.unique())
+    pick = c[0].multiselect("Sequences", seqs, default=seqs, key=f"{scope}_seq",
+                            format_func=lambda s: s.replace("_Jackal", ""))
+    return df[df.seq.isin(pick)]
+
+
+def _matched(df: pd.DataFrame, setups) -> pd.DataFrame:
+    """Keep only (sequence, outage) cells that have every selected setup, so means compare like with like."""
+    df = df[df.setup.isin(setups)]
+    full = df.groupby(["seq", "outage_s"]).setup.nunique() == len(setups)
+    keep = set(full[full].index)
+    return df[[(s, o) in keep for s, o in zip(df.seq, df.outage_s)]]
+
+
+def gps_page():
+    """GPS Failure Simulator, team mode: test_results.csv (held-out sequences, 10 to 120 s outages)."""
+    _results_header("GPS Failure Simulator", "Teammate results · localization under simulated outages",
+                    "How far does each sensor setup drift when GPS drops out for 10, 30, 60 or 120 s?")
+    t = summaries()["test_results"]
+    if t is None:
+        ui.not_evaluated("test_results.csv", "file not found in team_runs/slip_learning.")
+        return
+    t = ts.primary(t)
+    t = _filters(t, "tgps", groups=True)
+    metric = st.segmented_control("Metric", list(TEST_METRICS), format_func=lambda m: TEST_METRICS[m][0],
+                                  required=True, default="worst", key="tgps_metric")
+    setups = st.multiselect("Setups", list(ts.PRIMARY_SETUPS), default=list(ts.PRIMARY_SETUPS), key="tgps_setups")
+    m = _matched(t, setups)
+    if m.empty:
+        st.info("No matching rows for this selection.")
+        return
+    agg = m.groupby(["setup", "outage_s"]).agg(value=(metric, "mean"), seqs=("seq", "nunique"),
+                                               windows=("n", "sum")).reset_index()
+    fig = go.Figure()
+    for sname in setups:
+        a = agg[agg.setup == sname]
+        fig.add_trace(go.Bar(x=a.outage_s.map(lambda v: f"{v:g} s"), y=a.value, name=sname,
+                             marker_color=SETUP_COLOR.get(sname, MUTED),
+                             customdata=np.c_[a.seqs, a.windows],
+                             hovertemplate="%{y:.2f}<br>%{customdata[0]} sequences · %{customdata[1]} outage windows"
+                                           "<extra>" + sname + "</extra>"))
+    if metric != "time_within":
+        fig.add_hline(y=0.3, line=dict(color=MUTED, dash="dot"), annotation_text="0.3 m target",
+                      annotation_font=dict(color=MUTED, size=11))
+    ch._base_layout(fig, 360, legend_bottom=True, barmode="group")
+    fig.update_xaxes(title_text="simulated GPS outage length")
+    fig.update_yaxes(title_text=TEST_METRICS[metric][0])
+    st.plotly_chart(fig, key="tgps_bar", theme=None, config={"displaylogo": False})
+    st.caption(f"Bars: mean over the selected sequences of each sequence's value ({TEST_METRICS[metric][1]}). "
+               "Each sequence value is the teammate's average over its n outage windows. Only sequence and outage "
+               "combinations that have every selected setup are included, so setups are compared on the same "
+               "experiments. 02_13B is not in this table (the teammate used it for tuning). Simulated outages on "
+               "recorded CitrusFarm runs; computed by the teammate.")
+    with st.expander("Rows used"):
+        ui.df_table(m.sort_values(["seq", "outage_s", "setup"]).round(3))
+
+
+def cost_page():
+    """Sensor Cost Comparison, team mode: sensors per setup (qualitative) + simulated spray outcomes."""
+    _results_header("Sensor Cost Comparison", "Teammate results · sensors vs outcome",
+                    "Does learned wheel-slip correction buy accuracy without new hardware?")
+    ui.df_table(pd.DataFrame(SETUP_SENSORS, columns=["setup", "sensors", "relative hardware cost (qualitative)",
+                                                     "difference"]))
+    st.caption("Qualitative tiers only; no prices are claimed.")
+    sp = summaries()["spray_results"]
+    if sp is None:
+        ui.not_evaluated("spray_results.csv", "file not found in team_runs/slip_learning.")
+        return
+    ui.section("Simulated spraying outcome by setup", "trees passed during the simulated outages")
+    sp = _filters(sp, "tcost")
+    outage = st.segmented_control("Outage length", sorted(sp[sp.outage_s > 0].outage_s.unique()),
+                                  format_func=lambda v: f"{v:g} s", required=True, default=30, key="tcost_out")
+    sub = _matched(sp[sp.outage_s == outage], ts.PRIMARY_SETUPS)
+    if sub.empty:
+        st.info("No matching rows for this selection.")
+        return
+    cols = {"correct_pct": ("Correct", SERIES[0]), "wrong_tree_pct": ("Wrong tree", SERIES[1]),
+            "missed_pct": ("Missed", "#e8e2d0"), "double_pct": ("Double", "#d55181")}
+    agg = sub.groupby("setup").apply(lambda g: pd.Series({c: np.average(g[c], weights=g.trees) for c in
+                                                         list(cols) + ["wrong_row_pct"]} | {"trees": g.trees.sum()}),
+                                     include_groups=False).reindex(ts.PRIMARY_SETUPS)
+    fig = go.Figure()
+    for c, (lab, colr) in cols.items():
+        fig.add_trace(go.Bar(y=agg.index, x=agg[c], name=lab, orientation="h", marker_color=colr,
+                             hovertemplate="%{x:.1f} %<extra>" + lab + "</extra>"))
+    ch._base_layout(fig, 260, legend_bottom=True, barmode="stack")
+    fig.update_xaxes(title_text="% of trees passed during outages (tree-weighted over selected sequences)",
+                     range=[0, 100])
+    st.plotly_chart(fig, key="tcost_bar", theme=None, config={"displaylogo": False})
+    ui.df_table(agg.reset_index().round(1).rename(columns={"wrong_row_pct": "wrong row %", "trees": "trees"}))
+    st.caption(f"Simulated spraying, not real agricultural performance. Percentages are weighted by the number of "
+               f"trees each sequence passed during {outage} s outages; only sequences with all three setups are "
+               f"included. 'Wrong row' is reported separately by the teammate. 'Fixed slip from 02 (no learning)' is "
+               f"excluded from this presentation comparison at the teammate's request.")
+
+
+def safety_page():
+    """Worker Safety, team mode: safety_results.csv + Safe vs Productive on the selected sequence."""
+    _results_header("Worker Safety", "Teammate results · simulated worker encounters",
+                    "Does an uncertainty-dependent safety bubble stop the robot in time?")
+    sf = summaries()["safety_results"]
+    if sf is None:
+        ui.not_evaluated("safety_results.csv", "file not found in team_runs/slip_learning.")
+    else:
+        sf = _filters(sf, "tsafe")
+        outage = st.segmented_control("Outage length", sorted(sf.outage_s.unique()), format_func=lambda v: f"{v:g} s",
+                                      required=True, default=30, key="tsafe_out")
+        sub = sf[sf.outage_s == outage]
+        agg = sub.groupby("setup").agg(
+            encounters=("encounters", "sum"), unsafe=("unsafe", "sum"),
+            median_stop_dist_m=("median_stop_dist_m", "median"),
+            closest_unsafe_m=("closest_unsafe_m", "min"),
+            bubble_contains_truth_pct=("bubble_contains_truth_outage_pct", "mean"),
+            green_pct=("time_green_pct", "mean"), yellow_pct=("time_yellow_pct", "mean"),
+            red_pct=("time_red_pct", "mean")).reset_index()
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=agg.setup, y=agg.encounters - agg.unsafe, name="Safe encounters", marker_color=GOOD))
+        fig.add_trace(go.Bar(x=agg.setup, y=agg.unsafe, name="Unsafe encounters", marker_color=CRIT))
+        ch._base_layout(fig, 300, legend_bottom=True, barmode="stack")
+        fig.update_yaxes(title_text="simulated encounters (sum over selected sequences)")
+        st.plotly_chart(fig, key="tsafe_bar", theme=None, config={"displaylogo": False})
+        ui.df_table(agg.round(1))
+        st.caption("Simulated workers and encounters, not detected people. Encounters and unsafe counts are summed "
+                   "over the selected sequences; the median stopping distance is the median of per-sequence medians; "
+                   "closest unsafe distance is the minimum (empty when no encounter was unsafe); percentages are "
+                   "unweighted means. Green, yellow and red are the teammate's Trusted, Degraded and Lost shares.")
+    ui.section("Safe vs Productive mode on one sequence", "rules applied in this dashboard to the teammate's replay")
+    seq = st.session_state.team_seq
+    rows = []
+    for mode in ts.MODES:
+        dec = decisions(seq, mode)
+        dt = np.diff(np.r_[dec.t.to_numpy(), dec.t.iloc[-1]])
+        stops = int(((dec.level == 2) & (dec.level.shift(fill_value=0) != 2)).sum())
+        rows.append({"mode": mode, "time GO (s)": round(float(dt[dec.action == ts.GO].sum()), 1),
+                     "time SLOW (s)": round(float(dt[dec.action == ts.SLOW].sum()), 1),
+                     "time STOP (s)": round(float(dt[dec.action == ts.STOP].sum()), 1), "STOP episodes": stops,
+                     "closest estimated worker distance (m)": round(float(np.nanmin(dec.dist_m)), 2)
+                     if np.isfinite(dec.dist_m).any() else None})
+    ui.df_table(pd.DataFrame(rows))
+    st.caption(f"{seq}: Safe mode stops when a simulated worker is inside the safety bubble or confidence is Lost; "
+               "Productive mode stops only for a worker inside the bubble. Open Mission Control to replay it.")
+
+
+def risk_map_notice():
+    ui.notice("<b>Team Slip-Learning Results</b> do not include receiver-quality or canopy data, so this page "
+              "keeps using the backend data source selected under Backend EKF. Switch Localization results back to "
+              "Backend EKF to change it.", "")
+
+
 def mission_control():
     ss = st.session_state
     eng = S.is_engineer()
