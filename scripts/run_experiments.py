@@ -72,6 +72,11 @@ def main(argv):
                          ("warning_performance.csv", w_all)]:
         df = pd.concat(parts, ignore_index=True)
         df["generated"] = stamp
+        # merge: replace only the sequences re-run now, keep the others
+        if (RESULTS / fname).exists():
+            old = pd.read_csv(RESULTS / fname)
+            old = old[~old["sequence"].isin(df["sequence"].unique())]
+            df = pd.concat([old, df], ignore_index=True)
         df.to_csv(RESULTS / fname, index=False)
         print(f"wrote results/{fname} ({len(df)} rows)")
 

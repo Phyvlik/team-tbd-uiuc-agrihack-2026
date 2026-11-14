@@ -49,7 +49,7 @@ def main(seqs):
         loo = float(np.mean(others)) if others else None
         g_others = [gains[o] for o in streams if o != s and np.isfinite(gains[o])]
         loo_g = float(np.mean(g_others)) if g_others else None
-        table, _ = validate_sequence(st.reference, st.odom, st.reference_lever_arm, loo, loo_g)
+        table, _ = validate_sequence(st.reference, st.odom, st.reference_lever_arm, loo, loo_g, imu=st.imu)
         table.insert(0, "sequence", s)
         table["speed_scale_ratio"] = ratios[s]
         table["yaw_rate_gain"] = gains[s]

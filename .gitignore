@@ -24,3 +24,6 @@ Thumbs.db
 # team/organizer PDFs: kept locally, not committed (decide as a team before pushing anywhere public)
 /project-plan.pdf
 /challenge-requirements.pdf
+
+# personal Claude Code settings
+.claude/

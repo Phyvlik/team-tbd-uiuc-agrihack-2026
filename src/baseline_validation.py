@@ -14,6 +14,7 @@ V3  b1_scale_cal         V2 with wheel speed scale calibrated on OTHER
                          sequences (leave-one-out, no leakage)
 V4  b1_scale_yaw_cal     V3 plus wheel yaw-rate gain calibrated on OTHER
                          sequences (leave-one-out)
+B2  b2_imu_heading       wheel speed + IMU gyro yaw rate (only if imu given)
 D   b1_oracle_se2        V2 re-aligned with a full-trajectory SE(2) fit.
                          DIAGNOSTIC ONLY (uses future data): if D is small
                          but V2 is large, the problem is the initial heading.
@@ -28,7 +29,7 @@ import pandas as pd
 
 from .coordinate_utils import apply_se2, body_to_map, fit_se2, interp_series, path_length, rot2
 from .evaluation import error_series, summary_metrics
-from .localization import baseline_b1, initial_pose_from_track
+from .localization import baseline_b1, baseline_b2, initial_pose_from_track
 
 
 def _with_antenna(traj: pd.DataFrame, lever) -> pd.DataFrame:
@@ -69,7 +70,8 @@ def yaw_rate_gain(ref: pd.DataFrame, odom: pd.DataFrame, min_speed: float = 0.5,
 
 def validate_sequence(ref: pd.DataFrame, odom: pd.DataFrame, lever=(0.0, 0.0),
                       scale_from_other_sequences: float | None = None,
-                      yaw_gain_from_other_sequences: float | None = None) -> tuple[pd.DataFrame, dict]:
+                      yaw_gain_from_other_sequences: float | None = None,
+                      imu: pd.DataFrame | None = None) -> tuple[pd.DataFrame, dict]:
     """Return (per-variant metrics table, trajectories dict)."""
     init = initial_pose_from_track(ref, lever_arm=lever, align_distance=2.0, odom=odom)
     trajs, rows = {}, []
@@ -96,6 +98,14 @@ def validate_sequence(ref: pd.DataFrame, odom: pd.DataFrame, lever=(0.0, 0.0),
         if yaw_gain_from_other_sequences and np.isfinite(yaw_gain_from_other_sequences):
             o["w"] = o["w"] / yaw_gain_from_other_sequences
             trajs["V4_B1_scale_and_yaw_calibrated_LOO"] = _with_antenna(baseline_b1(o, init), lever)
+
+    # B2 wheel speed + IMU heading
+    if imu is not None and len(imu):
+        trajs["B2_odom_speed_IMU_heading"] = _with_antenna(baseline_b2(odom, imu, init), lever)
+        if scale_from_other_sequences and np.isfinite(scale_from_other_sequences):
+            o = odom.copy()
+            o["v"] = o["v"] / scale_from_other_sequences
+            trajs["B2_scale_calibrated_LOO"] = _with_antenna(baseline_b2(o, imu, init), lever)
 
     # D oracle SE(2) — diagnostic only
     err_b1 = error_series(b1, ref)
