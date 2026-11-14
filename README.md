@@ -648,7 +648,7 @@ No screenshots are committed yet; run the app to see the views.
 ## Contributing
 
 * Work on a branch, use Conventional Commits (`type(scope): imperative subject`), keep commits small. See
-  [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) for the full conventions.
+  [`AGENTS.md`](AGENTS.md) for the full conventions.
 * Run `pytest` before pushing. Never force-push to `main`.
 * Never commit `data/raw`, `data/processed`, `.bag` files, `.rrd` recordings or virtual environments.
 * Label every new number as recorded, computed, simulated, predicted or illustrative, and never present simulated or
