@@ -112,7 +112,7 @@ def status_hero(state: str, reason: str, label: str = "Navigation state", extra:
         f"<div class='h-reason'>{esc(meaning or s['meaning'])} · <b>{esc(reason)}</b>{extra}</div></div>")
 
 
-def uncertainty_gauge(r95: float, trusted: float, stop: float) -> str:
+def uncertainty_gauge(r95: float, trusted: float, stop: float, stop_label: str = "stop") -> str:
     """Bullet gauge: r95 against the Trusted / Stop limits (scale 0 → 2·stop)."""
     top = 2.0 * stop
     pos = lambda v: 100.0 * min(max(v, 0.0), top) / top  # noqa: E731
@@ -124,7 +124,7 @@ def uncertainty_gauge(r95: float, trusted: float, stop: float) -> str:
             f"<div class='g-seg' style='width:{100 - b}%;background:{CRIT}'></div>"
             f"<div class='g-marker' style='left:calc({pos(r95)}% - 1.5px)'></div></div>"
             f"<div class='g-ticks'><span style='left:{a}%'>{trusted:.1f} target</span>"
-            f"<span style='left:{b}%'>{stop:.1f} stop</span>"
+            f"<span style='left:{b}%'>{stop:.1f} {esc(stop_label)}</span>"
             f"<span style='right:0;left:auto;transform:none'>{top:.0f} m{over}</span></div></div>")
 
 

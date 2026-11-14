@@ -20,9 +20,13 @@ from dashboard import rerun_export as rx
 from dashboard import scene3d
 from dashboard import scenario as scn
 from dashboard import state as S
+from dashboard import team_ui
 from dashboard.theme import STATE
 
 ss = st.session_state
+if team_ui.active():          # Team Slip-Learning Results: replay the teammate's exports
+    team_ui.mission_control()
+    st.stop()
 key = ss.source
 streams = be.load_streams(key)
 info = be.source_info(key)

@@ -45,6 +45,13 @@ DEFAULTS = {
     "show_crew": True,
     "rrd_eng": None,
     "rrd_op": None,
+    # Team Slip-Learning Results (dashboard/team_ui.py)
+    "results_src": "Backend EKF (live)",   # or team_slip.SOURCE_LABEL
+    "team_seq": "02_13B_Jackal",
+    "team_mode": "Safe",
+    "team_t": 50.0,
+    "team_show_final": False,
+    "rrd_team": None,
 }
 
 

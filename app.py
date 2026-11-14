@@ -15,6 +15,7 @@ from dashboard import backend as be  # noqa: E402
 from dashboard import state as S  # noqa: E402
 from dashboard import theme  # noqa: E402
 from dashboard import opui  # noqa: E402
+from dashboard import team_ui  # noqa: E402
 
 theme.inject()
 S.init()
@@ -44,14 +45,27 @@ with st.sidebar:
     st.segmented_control("User mode", ["Operator", "Engineer"], key="view_mode", required=True,
                          help="Operator: status, alerts, map and actions. Engineer: adds trajectory comparison, "
                               "fusion diagnostics, localization errors and charts.")
-    keys = be.source_keys()
-    st.selectbox("Data source", keys, key="source", format_func=be.source_label,
-                 help="Real CitrusFarm sequences use recorded sensor streams. The synthetic orchard is a labelled "
-                      "demo scenario for features that need data the team has not extracted yet.")
-    info = be.source_info(st.session_state.source)
-    st.caption(f"{'🟦 Real' if info.provenance == 'real' else '🟨 Synthetic'} · {info.streams_text}")
+    st.segmented_control("Localization results", list(team_ui.SOURCES), key="results_src", required=True,
+                         help="Backend EKF: our estimator runs live on the selected CitrusFarm data. Team Slip-Learning "
+                              "Results: the teammate's exported trajectories (odometry + IMU + GPS with learned "
+                              "wheel-slip correction) replayed as supplied.")
+    if team_ui.active():
+        seqs = team_ui.sequences()
+        if seqs:
+            if st.session_state.team_seq not in seqs:
+                st.session_state.team_seq = seqs[0]
+            st.selectbox("Sequence", seqs, format_func=team_ui.seq_label, **S.bind("team_seq", "sb"),
+                         help="CitrusFarm sequences with teammate exports in team_runs/slip_learning/.")
+        st.caption("🟪 Teammate-computed estimates · RTK reference · simulated outages, workers and spray")
+    else:
+        keys = be.source_keys()
+        st.selectbox("Data source", keys, key="source", format_func=be.source_label,
+                     help="Real CitrusFarm sequences use recorded sensor streams. The synthetic orchard is a labelled "
+                          "demo scenario for features that need data the team has not extracted yet.")
+        info = be.source_info(st.session_state.source)
+        st.caption(f"{'🟦 Real' if info.provenance == 'real' else '🟨 Synthetic'} · {info.streams_text}")
 
-    if S.is_engineer():
+    if S.is_engineer() and not team_ui.active():
         with st.expander("Integrity thresholds", expanded=False):
             st.slider("Trusted if 95 % uncertainty ≤ (m)", 0.1, 1.0, step=0.05, **S.bind("trusted_r95", "sb"))
             st.slider("Stop if 95 % uncertainty > (m)", 0.3, 3.0, step=0.1, **S.bind("stop_r95", "sb"))
@@ -64,7 +78,8 @@ with st.sidebar:
         f"<div style='display:flex;gap:8px;align-items:center;margin:4px 0'><span class='sw' style='width:14px;height:14px;"
         f"border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:.6rem;color:#0b0b0b;"
         f"font-weight:900;background:{v['color']}'>{v['icon']}</span><div><b style='color:#eef2f5;font-size:.85rem'>"
-        f"{v['label']}</b><div class='small'>{v['meaning']}</div></div></div>" for v in theme.STATE.values()),
+        f"{v['label']}</b><div class='small'>{v['meaning']}</div></div></div>"
+        for v in (team_ui.STATE_KEY if team_ui.active() else theme.STATE).values()),
         unsafe_allow_html=True)
     with st.expander("Data labels", expanded=False):
         st.markdown(opui.kind_legend_html(), unsafe_allow_html=True)

@@ -133,7 +133,11 @@ CHK_STYLE = {ops.YES: ("✓", GOOD, "#0b0b0b", "Allowed"), ops.ADVISED: ("!", WA
              ops.NO: ("✕", CRIT, "#ffffff", "Not advised"), ops.NA: ("–", "#2a3542", MUTED, "Not needed")}
 
 
-def checklist_html(items) -> str:
+CHECKLIST_NOTE = ("Advisory only — derived from the team's integrity monitor and the simulated-crew safety rules. "
+                  "The dashboard does not control the robot.")
+
+
+def checklist_html(items, note: str = CHECKLIST_NOTE) -> str:
     rows = []
     for name, status, why in items:
         ic, bg, fg, lab = CHK_STYLE[status]
@@ -142,15 +146,14 @@ def checklist_html(items) -> str:
         dim = " dim" if status == ops.NA else ""
         rows.append(f"<div class='c{dim}'><div class='ic' style='background:{bg};color:{fg}'>{ic}</div>"
                     f"<div><div class='t'>{esc(name)}</div><div class='w'>{esc(lab)} · {esc(why)}</div></div></div>")
-    return ("<div class='chk'>" + "".join(rows) + "</div><div class='small' style='margin-top:6px'>Advisory only — "
-            "derived from the team's integrity monitor and the simulated-crew safety rules. The dashboard does not "
-            "control the robot.</div>")
+    return ("<div class='chk'>" + "".join(rows) + f"</div><div class='small' style='margin-top:6px'>{esc(note)}</div>")
 
 
-def alerts_html(keys: list[str], lang: str) -> str:
+def alerts_html(keys: list[str], lang: str, table: dict | None = None) -> str:
+    """``table``: alert texts keyed like ops.ALERTS (default). Teammate replay passes its own."""
     out = []
     for k in keys[:3]:
-        icon, state, en, en_do, es, es_do = ops.ALERTS[k]
+        icon, state, en, en_do, es, es_do = (table or ops.ALERTS)[k]
         col = STATE[state]["color"]
         en_b = (f"<div><span class='lang'>EN</span><span class='a-en'>{esc(en)}</span>"
                 f"<div class='a-do'>→ {esc(en_do)}</div></div>")
