@@ -61,7 +61,9 @@ with st.sidebar:
         st.caption("🟪 Slip-learning estimates · RTK reference · simulated outages, workers and spray")
     else:
         keys = be.source_keys()
-        st.selectbox("Data source", keys, key="source", format_func=be.source_label,
+        # bound, not key="source": the widget is not rendered while Team results are shown, and
+        # Streamlit would otherwise reset its displayed value while the page keeps the old source
+        st.selectbox("Data source", keys, format_func=be.source_label, **S.bind("source", "sb"),
                      help="Real CitrusFarm sequences use recorded sensor streams. The synthetic orchard is a labelled "
                           "demo scenario for features that need data the team has not extracted yet.")
         info = be.source_info(st.session_state.source)
