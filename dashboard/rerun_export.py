@@ -475,6 +475,15 @@ def serve_web(rrd: Path, web_port: int = 9090, grpc_port: int = 9877, slot: str 
         if _free(web_port) and _free(grpc_port):
             break
         time.sleep(0.2)
+    else:
+        # Ports still held, e.g. by a viewer left over from a previous Streamlit process: that
+        # viewer would keep serving the OLD recording. Move to the next free pair instead.
+        for k in range(1, 20):
+            if _free(web_port + 10 * k) and _free(grpc_port + 10 * k):
+                web_port, grpc_port = web_port + 10 * k, grpc_port + 10 * k
+                break
+        else:
+            raise RuntimeError(f"no free port pair near {web_port}/{grpc_port} for the Rerun web viewer")
     _PROCS[slot] = subprocess.Popen([exe, "--serve-web", "--web-viewer-port", str(web_port), "--port", str(grpc_port),
                                      "--hide-welcome-screen", str(rrd)],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
