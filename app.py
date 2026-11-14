@@ -47,7 +47,7 @@ with st.sidebar:
                               "fusion diagnostics, localization errors and charts.")
     st.segmented_control("Localization results", list(team_ui.SOURCES), key="results_src", required=True,
                          help="Backend EKF: our estimator runs live on the selected CitrusFarm data. Team Slip-Learning "
-                              "Results: the teammate's exported trajectories (odometry + IMU + GPS with learned "
+                              "Results: exported trajectories from the team's slip-learning localization (odometry + IMU + GPS with learned "
                               "wheel-slip correction) replayed as supplied.")
     if team_ui.active():
         seqs = team_ui.sequences()
@@ -55,8 +55,8 @@ with st.sidebar:
             if st.session_state.team_seq not in seqs:
                 st.session_state.team_seq = seqs[0]
             st.selectbox("Sequence", seqs, format_func=team_ui.seq_label, **S.bind("team_seq", "sb"),
-                         help="CitrusFarm sequences with teammate exports in team_runs/slip_learning/.")
-        st.caption("🟪 Teammate-computed estimates · RTK reference · simulated outages, workers and spray")
+                         help="CitrusFarm sequences with exports in team_runs/slip_learning/.")
+        st.caption("🟪 Slip-learning estimates · RTK reference · simulated outages, workers and spray")
     else:
         keys = be.source_keys()
         st.selectbox("Data source", keys, key="source", format_func=be.source_label,

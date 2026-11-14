@@ -56,7 +56,7 @@ def inventory() -> ts.Inventory:
     return ts.discover()
 
 
-@st.cache_data(show_spinner="Loading teammate results…")
+@st.cache_data(show_spinner="Loading slip-learning results…")
 def load(seq: str) -> ts.TeamRun:
     return ts.load_run(seq)
 
@@ -85,7 +85,7 @@ def sequences() -> list[str]:
 
 
 def seq_label(seq: str) -> str:
-    return f"{seq.replace('_Jackal', '')} · teammate results"
+    return seq.replace('_Jackal', '')
 
 
 # --------------------------------------------------------------------- helpers --
@@ -173,7 +173,7 @@ def _fmt_len(v: float) -> str:
 def tiles_html(run: ts.TeamRun, s: ts.Situation, show_final: bool) -> str:
     stt = STATE[ts.STATE_THEME[s.state]]
     conf = opui.tile("Navigation confidence", f"<span style='color:{stt['color']}'>{stt['icon']}</span> {s.state_name}",
-                     f"teammate state {s.state} · from model 2σ", stt["color"])
+                     f"state {s.state} · from model 2σ", stt["color"])
     if s.gps_out:
         gps = opui.tile("GPS (simulated outage)", f"<span style='color:{CRIT}'>■</span> Lost",
                         f"outage running for {s.outage_elapsed:.0f} s", CRIT)
@@ -213,7 +213,7 @@ def checklist_items(s: ts.Situation) -> list:
     return items
 
 
-CHECK_NOTE = ("Prototype decision rules from the teammate's 2σ limits, not validated safety guarantees. "
+CHECK_NOTE = ("Prototype decision rules using the slip-learning filter's 2σ limits, not validated safety guarantees. "
               "Localization capability and the GO/SLOW/STOP recommendation are separate: a task can be possible "
               "while the robot should still stop for a worker. The dashboard does not control a robot.")
 
@@ -262,18 +262,18 @@ def toolbar(run: ts.TeamRun):
 # ------------------------------------------------------------- mission control --
 
 def header(seq: str, eng: bool):
-    kinds = (opui.kind("recorded", "RTK reference (gt.csv)") + opui.kind("computed", "Teammate estimates")
+    kinds = (opui.kind("recorded", "RTK reference (gt.csv)") + opui.kind("computed", "Computed estimates")
              + opui.kind("simulated", "Simulated outages · workers · trees · spray"))
     ui.page_header(f"{'Engineer' if eng else 'Operator'} view · {ts.SOURCE_LABEL} · {seq}", "Mission Control",
                    "Where is the robot, can we trust that position, and what should happen next?",
-                   [ui.badge("TEAMMATE RESULTS", "real"), kinds])
+                   [ui.badge("SLIP-LEARNING LOCALIZATION", "real"), kinds])
 
 
 def not_available() -> bool:
     inv = inventory()
     if inv.sequences:
         return False
-    ui.not_evaluated(ts.SOURCE_LABEL, f"no complete teammate run found in {ts.TEAM_DIR}.",
+    ui.not_evaluated(ts.SOURCE_LABEL, f"no complete slip-learning run found in {ts.TEAM_DIR}.",
                      "<SEQ>_dashboard.csv, <SEQ>_trees.csv, <SEQ>_crew.csv (see README)")
     return True
 
@@ -319,12 +319,12 @@ def live_panel():
                       f"</span>{SPRAY_TEXT[k]} {int((labels == k).sum())}</span>"
                       for k in ("correct", "wrong_tree", "missed", "double", "unreached"))
             + f"</div><div class='small'>{opui.kind('simulated', 'Simulated spray')} Tree positions and spray "
-              f"outcomes come from the teammate's simulation, not a field survey or real spraying. "
+              f"outcomes are simulated, not a field survey or real spraying. "
               + ("Each outcome appears when the RTK path passes closest to the tree; this approximate timing "
-                 f"matches the teammate's own during-outage flags for {100 * run.tree_timing_agreement:.0f} % of "
+                 f"matches the exported during-outage flags for {100 * run.tree_timing_agreement:.0f} % of "
                  "trees." if run.tree_reveal == "progressive" else
                  f"Spray timing cannot be reconstructed for this run (closest-approach timing matches only "
-                 f"{100 * run.tree_timing_agreement:.0f} % of the teammate's flags), so outcomes stay hidden "
+                 f"{100 * run.tree_timing_agreement:.0f} % of the exported flags), so outcomes stay hidden "
                  "unless 'Show final spray results' is on.")
             + " Robot drawn 2× size.</div>", unsafe_allow_html=True)
         jumps = []
@@ -344,11 +344,11 @@ def live_panel():
         if eng:
             st.caption(f"Actual error vs RTK now (replay only): **{s.error:.2f} m** · learned slip scale "
                        f"**{s.slip_scale:.3f}**")
-        st.caption("Simulated decision support from the teammate's rules; no command is sent to a robot.")
+        st.caption("Simulated decision support; no command is sent to a robot.")
 
     c1, c2 = st.columns([1, 1.15], gap="medium")
     with c1:
-        ui.section("What the robot can do now", "Teammate's 2σ limits · updates with the replay")
+        ui.section("What the robot can do now", "Prototype 2σ limits · updates with the replay")
         st.markdown(opui.checklist_html(checklist_items(s), note=CHECK_NOTE), unsafe_allow_html=True)
     with c2:
         h = st.container(horizontal=True, vertical_alignment="center")
@@ -362,7 +362,7 @@ def live_panel():
 # ------------------------------------------------------------------- engineer --
 
 UNAVAILABLE = ("IMU gyro bias", "GPS NIS / consistency-gate statistics", "GPS rejection history",
-               "Raw GPS fixes used by the teammate's filter", "LiDAR measurements or point clouds",
+               "Raw GPS fixes used by the slip-learning filter", "LiDAR measurements or point clouds",
                "Full position covariance (only a scalar sigma is exported)", "Robot speed")
 
 
@@ -421,7 +421,7 @@ def worker_figure(run: ts.TeamRun, mode: str) -> go.Figure:
     return _time_axes(fig, run, 260)
 
 
-@st.cache_data(show_spinner="Running the backend EKF with the teammate's outage windows…")
+@st.cache_data(show_spinner="Running the backend EKF with the same outage windows…")
 def backend_comparison(seq: str):
     """Backend EKF on the same sequence with the SAME outage windows, if the CitrusFarm data is local."""
     from . import backend as be
@@ -445,7 +445,7 @@ def trajectory_figure(run: ts.TeamRun, bk: dict | None) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=d.x_true, y=d.y_true, mode="lines", name="RTK reference (gt.csv)",
                              line=dict(color=REF, width=2, dash="dot")))
-    fig.add_trace(go.Scatter(x=d.x_est, y=d.y_est, mode="lines", name="Teammate estimate (slip learning)",
+    fig.add_trace(go.Scatter(x=d.x_est, y=d.y_est, mode="lines", name="Slip-learning estimate",
                              line=dict(color=SERIES[2], width=2)))
     if bk is not None:
         fig.add_trace(go.Scatter(x=bk["x"], y=bk["y"], mode="lines", name=f"Backend EKF ({bk['method']})",
@@ -496,7 +496,7 @@ def engineer(seq: str):
     with tabs[0]:
         bk = backend_comparison(seq)
         st.plotly_chart(trajectory_figure(run, bk), key="team_traj", theme=None, config={"displaylogo": False})
-        rows = [{"run": "Teammate: odometry + IMU + GPS + slip learning", **_metrics(run.dash.error_m.to_numpy(),
+        rows = [{"run": "Slip learning: odometry + IMU + GPS + learned slip correction", **_metrics(run.dash.error_m.to_numpy(),
                                                                                        run.dash.t.to_numpy(),
                                                                                        run.outages)}]
         if bk is not None:
@@ -509,7 +509,7 @@ def engineer(seq: str):
             gps = ("a SIMULATED GPS proxy (reference + 3 cm noise)" if bk["gps_source"] == "proxy_from_reference"
                    else "recorded GPS fixes")
             st.caption(f"Two different implementations on the same RTK reference and the same simulated outage "
-                       f"windows. The backend EKF here uses {bk['method'].lower()} with {gps}; the teammate's filter "
+                       f"windows. The backend EKF here uses {bk['method'].lower()} with {gps}; the slip-learning filter "
                        f"adds a learned wheel-slip correction and its GPS input is not described in the export. "
                        f"Sensor sets and GPS inputs differ, so this is not a controlled comparison.")
     with tabs[1]:
@@ -526,7 +526,7 @@ def engineer(seq: str):
             ui.kpi_html("Time within 0.3 m", f"{100 * (d.error_m <= 0.3).mean():.1f} %", "full run"),
         ])
         st.caption("**Actual error** (error_m) is the distance to the RTK reference and is only known afterwards. "
-                   "**Model uncertainty** (2σ) is what the teammate's filter believes in real time. If sigma is a "
+                   "**Model uncertainty** (2σ) is what the slip-learning filter believes in real time. If sigma is a "
                    "per-axis standard deviation of an ideal 2D Gaussian estimate, a 2σ circle would contain the truth "
                    "about 86 % of the time (the export does not define sigma further). The shares above are an "
                    "empirical check, not a calibration proof.")
@@ -538,7 +538,7 @@ def engineer(seq: str):
                     f"0.885 means the filter scales the wheel-odometry speed down by about 11.5 % to account for "
                     f"wheel slip. The correction is learned per run; values differ between runs:")
         ui.df_table(slip_table())
-        st.caption("Computed by the teammate's filter; not independently validated here.")
+        st.caption("Computed by the slip-learning filter; not independently validated here.")
     with tabs[3]:
         st.plotly_chart(decision_figure(run), key="team_dec", theme=None, config={"displaylogo": False})
         st.plotly_chart(worker_figure(run, ss.team_mode), key="team_wd", theme=None, config={"displaylogo": False})
@@ -550,7 +550,7 @@ def engineer(seq: str):
                                           for a in (ts.GO, ts.SLOW, ts.STOP)},
                          "STOP episodes": int(((dec.level == 2) & (dec.level.shift(fill_value=0) != 2)).sum())})
         ui.df_table(pd.DataFrame(rows))
-        st.caption("Decisions follow the teammate's documented rules on the supplied columns (dashboard/team_slip.py). "
+        st.caption("Decisions follow the documented slip-learning rules on the supplied columns (dashboard/team_slip.py). "
                    "Workers and decisions are simulated; no command is sent to a robot.")
     with tabs[4]:
         ev = ts.events(run, decisions(seq, ss.team_mode)).rename(columns={"t_rel": "time (s)"})
@@ -560,15 +560,15 @@ def engineer(seq: str):
         st.markdown("\n".join(f"- {c}" for c in run.checks))
         st.markdown("- `x_true, y_true` equal the CitrusFarm `gt.csv` reference on the same clock "
                     "(checked on 02_13B and 06_14B: median difference below 1 mm, no rotation, no time offset)")
-        st.markdown("**Not available in this teammate export**")
-        ui.df_table(pd.DataFrame({"field": UNAVAILABLE, "status": "Not available in this teammate export"}))
+        st.markdown("**Not available in this export**")
+        ui.df_table(pd.DataFrame({"field": UNAVAILABLE, "status": "Not available in this export"}))
         ui.df_table(pd.DataFrame([
             ("RTK reference trajectory", "Recorded (CitrusFarm gt.csv, post-processed RTK)"),
-            ("Estimated pose, sigma, state, slip scale, error", "Computed by the teammate's localization analysis"),
+            ("Estimated pose, sigma, state, slip scale, error", "Computed by the slip-learning localization analysis"),
             ("GPS outages", "Simulated (30 s every 90 s from 60 s)"),
-            ("Trees and spray outcomes", "Simulated by the teammate, not surveyed or measured"),
+            ("Trees and spray outcomes", "Simulated, not surveyed or measured"),
             ("Workers", "Simulated positions, not detected people"),
-            ("GO / SLOW / STOP", "Teammate's rules applied in this dashboard (simulated decision support)"),
+            ("GO / SLOW / STOP", "Documented slip-learning rules applied in this dashboard (simulated decision support)"),
             ("Files", ", ".join(Path(p).name for p in run.files.values())),
         ], columns=["item", "origin"]))
 
@@ -589,8 +589,8 @@ TEST_METRICS = {"worst": ("Worst error during outage (m)", "lower is better"),
 
 
 def _results_header(title: str, eyebrow: str, sub: str):
-    ui.page_header(eyebrow, title, sub, [ui.badge("TEAMMATE RESULTS", "real"),
-                                          opui.kind("computed", "Teammate batch results"),
+    ui.page_header(eyebrow, title, sub, [ui.badge("SLIP-LEARNING LOCALIZATION", "real"),
+                                          opui.kind("computed", "Batch results"),
                                           opui.kind("simulated", "Simulated outages")])
 
 
@@ -615,7 +615,7 @@ def _matched(df: pd.DataFrame, setups) -> pd.DataFrame:
 
 def gps_page():
     """GPS Failure Simulator, team mode: test_results.csv (held-out sequences, 10 to 120 s outages)."""
-    _results_header("GPS Failure Simulator", "Teammate results · localization under simulated outages",
+    _results_header("GPS Failure Simulator", "Slip-learning results · localization under simulated outages",
                     "How far does each sensor setup drift when GPS drops out for 10, 30, 60 or 120 s?")
     t = summaries()["test_results"]
     if t is None:
@@ -648,17 +648,17 @@ def gps_page():
     fig.update_yaxes(title_text=TEST_METRICS[metric][0])
     st.plotly_chart(fig, key="tgps_bar", theme=None, config={"displaylogo": False})
     st.caption(f"Bars: mean over the selected sequences of each sequence's value ({TEST_METRICS[metric][1]}). "
-               "Each sequence value is the teammate's average over its n outage windows. Only sequence and outage "
+               "Each sequence value is the exported average over its n outage windows. Only sequence and outage "
                "combinations that have every selected setup are included, so setups are compared on the same "
-               "experiments. 02_13B is not in this table (the teammate used it for tuning). Simulated outages on "
-               "recorded CitrusFarm runs; computed by the teammate.")
+               "experiments. 02_13B is not in this table (it was used for tuning). Simulated outages on "
+               "recorded CitrusFarm runs; computed by the slip-learning analysis.")
     with st.expander("Rows used"):
         ui.df_table(m.sort_values(["seq", "outage_s", "setup"]).round(3))
 
 
 def cost_page():
     """Sensor Cost Comparison, team mode: sensors per setup (qualitative) + simulated spray outcomes."""
-    _results_header("Sensor Cost Comparison", "Teammate results · sensors vs outcome",
+    _results_header("Sensor Cost Comparison", "Slip-learning results · sensors vs outcome",
                     "Does learned wheel-slip correction buy accuracy without new hardware?")
     ui.df_table(pd.DataFrame(SETUP_SENSORS, columns=["setup", "sensors", "relative hardware cost (qualitative)",
                                                      "difference"]))
@@ -691,13 +691,13 @@ def cost_page():
     ui.df_table(agg.reset_index().round(1).rename(columns={"wrong_row_pct": "wrong row %", "trees": "trees"}))
     st.caption(f"Simulated spraying, not real agricultural performance. Percentages are weighted by the number of "
                f"trees each sequence passed during {outage} s outages; only sequences with all three setups are "
-               f"included. 'Wrong row' is reported separately by the teammate. 'Fixed slip from 02 (no learning)' is "
-               f"excluded from this presentation comparison at the teammate's request.")
+               f"included. 'Wrong row' is reported separately in the export. 'Fixed slip from 02 (no learning)' is "
+               f"excluded from this presentation comparison as requested by its author.")
 
 
 def safety_page():
     """Worker Safety, team mode: safety_results.csv + Safe vs Productive on the selected sequence."""
-    _results_header("Worker Safety", "Teammate results · simulated worker encounters",
+    _results_header("Worker Safety", "Slip-learning results · simulated worker encounters",
                     "Does an uncertainty-dependent safety bubble stop the robot in time?")
     sf = summaries()["safety_results"]
     if sf is None:
@@ -724,8 +724,8 @@ def safety_page():
         st.caption("Simulated workers and encounters, not detected people. Encounters and unsafe counts are summed "
                    "over the selected sequences; the median stopping distance is the median of per-sequence medians; "
                    "closest unsafe distance is the minimum (empty when no encounter was unsafe); percentages are "
-                   "unweighted means. Green, yellow and red are the teammate's Trusted, Degraded and Lost shares.")
-    ui.section("Safe vs Productive mode on one sequence", "rules applied in this dashboard to the teammate's replay")
+                   "unweighted means. Green, yellow and red are the Trusted, Degraded and Lost shares.")
+    ui.section("Safe vs Productive mode on one sequence", "rules applied in this dashboard to the slip-learning replay")
     seq = st.session_state.team_seq
     rows = []
     for mode in ts.MODES:
