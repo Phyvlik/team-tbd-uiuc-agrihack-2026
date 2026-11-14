@@ -5,7 +5,10 @@ Track 3: Automation, Robotics & Intelligent Machines · Challenge 1: Reliable ag
 multimodal sensing
 
 A Python localization backend (EKF sensor fusion, GPS outage experiments, integrity monitoring) and a Streamlit
-mission control dashboard with an embedded Rerun replay, built on the public CitrusFarm dataset.
+mission control dashboard with an embedded Rerun replay, built on the public CitrusFarm dataset. The dashboard shows
+two localization implementations side by side: the live **backend EKF** in `src/`, and the team's
+**slip-learning localization** (odometry + IMU + GPS with a learned wheel-slip correction), replayed from its CSV
+exports as the **Team Slip-Learning Results** source.
 
 > **Status: research prototype.** This is decision support for a hackathon demo, not a certified autonomous safety
 > system. The dashboard never controls a robot. The estimator's 95% uncertainty is **uncalibrated** (see
@@ -19,12 +22,13 @@ mission control dashboard with an embedded Rerun replay, built on the public Cit
 4. [Architecture](#architecture)
 5. [Dataset and data provenance](#dataset-and-data-provenance)
 6. [Sensor fusion implementation](#current-sensor-fusion-implementation)
-7. [Rerun integration](#rerun-integration)
-8. [Teammate integration guide](#teammate-integration-guide)
-9. [Testing](#testing)
-10. [Current limitations](#current-limitations)
-11. [Demo walkthrough](#two-minute-demo-walkthrough)
-12. [Contributing](#contributing)
+7. [Team Slip-Learning Localization Results](#team-slip-learning-localization-results)
+8. [Rerun integration](#rerun-integration)
+9. [Teammate integration guide](#teammate-integration-guide)
+10. [Testing](#testing)
+11. [Current limitations](#current-limitations)
+12. [Demo walkthrough](#two-minute-demo-walkthrough)
+13. [Contributing](#contributing)
 
 ## Project overview
 
@@ -98,8 +102,30 @@ Everything below runs in the current code and was checked on 2026-11-14 (see [Te
 | **Orchard Risk Map** | observed receiver quality along the route and a go/no-go check on whether GPS quality varies at all; predicted canopy-to-GPS risk blocks on the labelled synthetic orchard only |
 | **Worker Safety** | simulated crews, dynamic buffer `min_buffer + k · r95`, GO / SLOW / STOP light, English and Spanish crew alerts, offline safety scoring against RTK |
 
-Sidebar: user mode (Operator / Engineer), data source, integrity thresholds (Engineer), navigation status key, data
-label key.
+Sidebar: user mode (Operator / Engineer), **localization results** (Backend EKF or Team Slip-Learning Results), data
+source or sequence, integrity thresholds (Engineer, backend EKF only), navigation status key, data label key.
+
+### Team Slip-Learning Results source
+
+Selecting **Team Slip-Learning Results** in the sidebar makes the team's exported slip-learning trajectories drive
+the app (details in [Team Slip-Learning Localization Results](#team-slip-learning-localization-results)):
+
+* **Mission Control, Operator:**
+  * 3D orchard and 2D map replay: estimated pose and heading, confidence-coloured trail, 2σ bubble, and a safety
+    bubble ring coloured GO / SLOW / STOP;
+  * simulated workers with 2 m zones and simulated spray outcomes per tree;
+  * a large GO / SLOW / STOP indicator with a **Safe / Productive** toggle;
+  * confidence, GPS outage time, model uncertainty, worker distance, spray outcome;
+  * capability checklist, English/Spanish alerts, event chips, jumps to the next outage or worker, playback speed;
+  * a one-click 02_13B demo.
+* **Mission Control, Engineer:**
+  * Rerun replay;
+  * RTK vs slip-learning vs backend EKF trajectories;
+  * error vs 2σ, wheel-slip learning, Safe vs Productive decisions, event log;
+  * validation and provenance, including the fields the export does not contain.
+* **GPS Failure Simulator, Sensor Cost Comparison, Worker Safety:** the exported batch results (`test_results`,
+  `spray_results`, `safety_results`).
+* **Orchard Risk Map:** unchanged; the export has no receiver-quality or canopy data, and the page says so.
 
 ## Installation and usage
 
@@ -142,6 +168,9 @@ still runs on the labelled synthetic orchard.
 
 Open the URL Streamlit prints (default http://localhost:8501). Pick **06_14B · real · odom + IMU + GPS** in the
 sidebar for the recorded-GPS sequence, and switch **User mode** to **Engineer** for the diagnostics and Rerun tab.
+For the slip-learning replay, set **Localization results** to **Team Slip-Learning Results**. It works even without
+the CitrusFarm download, because its CSVs are committed in `team_runs/slip_learning/`; only the backend EKF
+comparison in Engineer mode needs the local data.
 
 ### 4. Tests
 
@@ -160,6 +189,9 @@ From the command line (defaults: 06_14B, odometry + IMU + GPS, 60 s outage at 10
 .venv\Scripts\python scripts\export_rerun.py
 .venv\Scripts\python scripts\export_rerun.py -h          # other sources, methods, outages, operator view
 .venv\Scripts\rerun recordings\engineer_06_14B_Jackal_odom-imu-gps_100s-60s.rrd
+
+# slip-learning replay (reuses an existing file unless you add the overwrite option, see -h)
+.venv\Scripts\python scripts\export_rerun.py --results team --source 02_13B_Jackal --mode Safe
 ```
 
 ### 6. Import teammate results
@@ -191,6 +223,10 @@ flowchart LR
     F ==> G["Streamlit app.py + views/<br/>operator and engineer pages"]
     F ==>|"dashboard/rerun_export.py"| H["recordings/*.rrd"]
     H ==> I["Rerun viewer<br/>embedded iframe or native app"]
+    A ==>|"team slip-learning analysis (offline)"| S["team_runs/slip_learning/*.csv<br/>computed exports"]
+    S ==>|"dashboard/team_slip.py<br/>validate, decision rules"| U["dashboard/team_ui.py<br/>Team Slip-Learning Results views"]
+    U ==> G
+    U ==>|"rerun_export.build_team_recording"| H
 ```
 
 ### Folder structure
@@ -203,7 +239,8 @@ src/                     localization backend (EKF, outages, monitor, evaluation
 scripts/                 data download/extraction, batch experiments, Rerun export, calibration audit
 data/                    CitrusFarm files (not committed; see data/README.md)
 results/                 team batch result tables (committed)
-team_runs/               drop folder for teammate localization runs
+team_runs/               drop folder for teammate localization runs (adapter)
+team_runs/slip_learning/ slip-learning CSV exports (24 files, committed) for the Team Slip-Learning Results source
 recordings/              generated .rrd files (not committed)
 tests/                   pytest suite (backend + UI + Rerun consistency)
 docs/                    calibration, provenance, data interface, teammate checklist, demo script
@@ -221,7 +258,9 @@ docs/                    calibration, provenance, data interface, teammate check
 | `dashboard/scene3d.py` | Plotly 3D orchard with a constant trace layout so playback does not flicker | |
 | `dashboard/scenario.py` | cached orchard, spray, demo crew and safety evaluation for a run | `demo_crew`, `safety` |
 | `dashboard/opui.py` | toolbar, metric tiles, checklist, alerts, event chips, data label tags, demo buttons | `experiment_toolbar`, `start_demo`, `reset_demo` |
-| `dashboard/rerun_export.py` | builds `.rrd` recordings (engineer and operator blueprints), starts the web viewer | `build_recording`, `serve_web`, `open_native` |
+| `dashboard/rerun_export.py` | builds `.rrd` recordings (engineer and operator blueprints, slip-learning replay), starts the web viewer | `build_recording`, `build_team_recording`, `serve_web`, `open_native` |
+| `dashboard/team_slip.py` | slip-learning exports: discovery (canonical names), strict schema validation, outage intervals, tree timing, Safe / Productive rules, capability checklist, events, alerts. No Streamlit | `discover`, `load_run`, `load_summaries`, `decision_series`, `decide`, `capabilities`, `events`, `situation` |
+| `dashboard/team_ui.py` | Team Slip-Learning Results views: operator replay, engineer diagnostics, results pages, Rerun tab | `mission_control`, `engineer`, `gps_page`, `cost_page`, `safety_page` |
 | `dashboard/state.py`, `theme.py`, `components.py`, `charts.py` | shared session state, colours, HTML components, Plotly figures | |
 | `src/data_loader.py` | the `SensorStreams` contract; reads `gt.csv`, odometry bags, extracted CSVs, processed folders | `build_citrusfarm_sequence`, `load_processed`, `list_processed_sequences` |
 | `src/pipeline.py` | one experiment: GPS input, outage scenario, initial pose, EKF, monitor, errors, metrics | `gps_input`, `missing_streams`, `run_experiment` |
@@ -260,8 +299,11 @@ the GPS antenna).
 
 * **Recorded LiDAR and canopy measurements are not connected yet.** No sequence has `lidar_odom.csv` or `canopy.csv`,
   so C3 and the "Full fusion + LiDAR" method show *Not evaluated* on real data.
-* **All localization estimates shown come from this project's Python EKF** (`src/sensor_fusion.py`), computed live.
-* **No teammate-generated localization runs have been imported yet** (`team_runs/` holds only its README).
+* **Backend EKF estimates** come from this project's Python EKF (`src/sensor_fusion.py`), computed live.
+* **Slip-learning estimates** for all seven sequences come from the team's slip-learning analysis. They are computed
+  CSV exports in `team_runs/slip_learning/`, replayed as supplied
+  (see [Team Slip-Learning Localization Results](#team-slip-learning-localization-results)).
+* **No other teammate runs** have been dropped into the general adapter folder (`team_runs/*.csv`) yet.
 * The sidebar label "odom only" means "no extracted IMU/GPS files". Those sequences still run with GPS, using the
   simulated proxy, and the UI says so on the GPS tile.
 
@@ -357,6 +399,193 @@ confirmation by the domain lead.
 > During outages the region is very conservative (median `r95` 6.7 m vs median error 0.29 m with odometry + IMU),
 > which is why Stop is recommended about 7.5 s into an outage while the true error stays below 0.3 m for about 29 s.
 > Values are displayed exactly as computed and tagged *Uncalibrated*; nothing is rescaled.
+
+## Team Slip-Learning Localization Results
+
+### What it is
+
+A second localization implementation from the team: it fuses wheel odometry, an IMU and GPS, and **learns a
+wheel-slip correction** while driving. The learned correction is a scale factor applied to the wheel speed. It was
+run offline on all seven CitrusFarm sequences with simulated GPS outages, and the results were exported as CSV files.
+
+The dashboard replays these files as the **Team Slip-Learning Results** source:
+* **The CSVs are computed results, not raw sensor measurements.** Only `x_true, y_true` (the RTK reference) are
+  recorded data.
+* **Nothing is recomputed.** The dashboard does not recompute the estimates, the uncertainty or the states. It
+  validates the files and applies the documented decision rules.
+
+### How it differs from the backend EKF
+
+| | Backend EKF (`src/`) | Slip-learning results (`team_runs/slip_learning/`) |
+|---|---|---|
+| where it runs | live in the dashboard on the local CitrusFarm data | offline; CSV exports replayed as supplied |
+| sensors | wheel odometry, IMU (06_14B only), GPS (recorded on 06_14B, simulated proxy elsewhere) | wheel odometry, IMU, GPS, learned slip correction (the export does not say whether GPS was recorded or simulated) |
+| uncertainty | 95% radius from the covariance (uncalibrated) | scalar `sigma`; the dashboard shows the model-estimated 2σ |
+| states | Trusted / Degraded / Stop recommended (r95 0.3 m / 1.0 m) | Trusted / Degraded / Lost (2σ 0.3 m / 1.5 m) |
+| outages | one user-chosen simulated outage | fixed schedule: 30 s every 90 s, starting at 60 s |
+| decisions | worker buffer `min_buffer + k · r95` | Safe / Productive rules on `bubble_m` (below) |
+
+The two are different implementations with different sensor sets, so the Engineer comparison is not a controlled
+experiment.
+
+### Data flow
+
+CitrusFarm recordings → team slip-learning localization analysis (offline) → CSV exports in
+`team_runs/slip_learning/` → `dashboard/team_slip.py` (discover, validate, rules) → `dashboard/team_ui.py` (Operator,
+Engineer and results views) → `dashboard/rerun_export.build_team_recording` (`.rrd` export).
+
+### Files (24)
+
+| file | rows | content |
+|---|---|---|
+| `<SEQ>_dashboard.csv` (7) | one per ~0.1 s | the replay (columns below) |
+| `<SEQ>_trees.csv` (7) | one per tree | `x, y` (m), `status` (`correct`, `wrong_tree`, `missed`, `double`), `during_outage` (bool) |
+| `<SEQ>_crew.csv` (7) | one per outage | `t` (s), `t_outage_start` (s), `x, y` (m): simulated worker |
+| `test_results.csv` | 96 | `seq, group, outage_s, setup, n, time_within, err_end, worst` |
+| `spray_results.csv` | 49 | `seq, outage_s, setup, trees, correct_pct, wrong_tree_pct, missed_pct, double_pct, wrong_row_pct` |
+| `safety_results.csv` | 56 | `closest_unsafe_m, seq, outage_s, setup, encounters, unsafe, median_stop_dist_m, bubble_contains_truth_outage_pct, time_green_pct, time_yellow_pct, time_red_pct` |
+
+`<SEQ>` is `01_13B_Jackal` ... `07_14B_Jackal`. The files arrived with a Windows " (2)" suffix and were renamed to
+these canonical names (content unchanged). `team_slip.discover` also maps suffixed names and reports conflicts.
+
+Dashboard CSV columns:
+
+| column | unit | meaning | origin |
+|---|---|---|---|
+| `t` | s | time since the first `gt.csv` sample (same clock as the backend views) | |
+| `x_true, y_true` | m | RTK reference, `gt.csv` frame (x north, y west) | recorded |
+| `x_est, y_est` | m | estimated position | computed |
+| `yaw_est` | rad | estimated heading, counterclockwise from +x | computed |
+| `sigma` | m | model-estimated position uncertainty | computed |
+| `gps_out` | bool | inside a simulated GPS outage | simulated |
+| `state` | 0/1/2 | Trusted / Degraded / Lost | computed |
+| `bubble_m` | m | safety bubble radius (equals 2 + 2σ in every row) | computed |
+| `slip_scale` | | learned wheel-speed scale factor | computed |
+| `error_m` | m | distance between estimate and RTK reference | computed (retrospective) |
+
+### Validation performed on every load (results for the delivered files)
+
+`team_slip.load_run` rejects missing columns, missing or non-numeric values, non-boolean flags, unknown tree
+statuses and timestamps that do not strictly increase. It **reports without changing** anything that is inconsistent.
+On the delivered files:
+
+* `t` strictly increases, with a median step of 0.100 s.
+* `error_m` equals the distance between `(x_est, y_est)` and `(x_true, y_true)` (max difference 1e-15 m).
+* `state` matches the 2σ thresholds on every row.
+* `bubble_m` equals 2 + 2σ exactly.
+* `x_true, y_true` equal the CitrusFarm `gt.csv` reference on the same clock: same row count, no rotation, no time
+  offset, median difference below 1 mm (checked on 02_13B and 06_14B).
+
+### Learned wheel-slip correction
+
+`slip_scale` starts at 1.0 (no correction) and is learned during the run. The final values are 0.885 to 0.891 across
+the seven runs. A value of about 0.885 means the wheel-odometry speed is scaled down by about 11.5% to account for
+slip. The value is learned per run, so it is not one constant for all runs. Engineer mode plots it over time and lists
+it per run. It has not been independently validated here.
+
+### Navigation states, decisions and checklist
+
+* **States** (teammate definition):
+  * **Trusted:** 2σ ≤ 0.3 m.
+  * **Degraded:** 0.3 m < 2σ ≤ 1.5 m.
+  * **Lost:** 2σ > 1.5 m.
+
+  2σ is model-estimated uncertainty, not a validated 95% confidence interval.
+* **Worker distance:** the distance from the estimated position to the nearest simulated worker that is currently
+  visible. A worker is visible from `t_outage_start` through `t + 15` s and has a 2 m zone. When no worker is visible,
+  no distance is shown (it is never treated as zero).
+* **Safe mode:**
+  * **STOP** if distance < `bubble_m` or state = Lost;
+  * **SLOW** if state ≥ Degraded or distance < `bubble_m` + 5 m;
+  * **GO** otherwise.
+* **Productive mode:**
+  * **STOP** only if distance < `bubble_m`;
+  * **SLOW** and **GO** as in Safe mode.
+* **Capability checklist (2σ limits, prototype rules):**
+  * drive between rows ≤ 1.0 m;
+  * spray each row ≤ 3.0 m;
+  * give each tree its own dose ≤ 2.0 m;
+  * map individual trees ≤ 0.3 m.
+
+  The checklist describes localization capability; the GO / SLOW / STOP line on top is the overall recommendation.
+* These are simulated decision-support outputs. No command is sent to a robot.
+
+### Spraying and workers (simulated)
+
+* **Trees and outcomes are simulated.** Tree positions and spray outcomes come from the slip-learning simulation, not
+  from a field survey or real spraying.
+* **Spray timing is not exported.** The tree files give only final outcomes, so the dashboard reveals an outcome when
+  the RTK path passes closest to the tree. This rule is used only where it reproduces the exported `during_outage`
+  flags for at least 90% of trees:
+  * **02_13B:** 99.4% agreement, outcomes revealed progressively.
+  * **06_14B:** 98.1% agreement, outcomes revealed progressively.
+  * **The other five runs:** 53% to 77% agreement, because rows are driven more than once. Outcomes there are hidden
+    during the replay unless **Show final spray results** is on.
+* **Workers are simulated positions, not detected people.** In these exports each worker stands on the robot's path
+  24 s after an outage starts.
+
+### Localization evaluation results (from `test_results.csv`)
+
+Worst error during a simulated outage: the mean over the six held-out sequences of each sequence's average over its
+outage windows. 02_13B is excluded because it was used for tuning.
+
+| outage | Odometry + GPS | Odometry + IMU + GPS | Odometry + IMU + GPS + slip learning |
+|---|---|---|---|
+| 10 s | 2.34 m | 1.96 m | 0.99 m |
+| 30 s | 8.92 m | 6.12 m | 3.71 m |
+| 60 s | 20.34 m | 10.13 m | 6.59 m |
+| 120 s | 34.52 m | 13.79 m | 11.22 m |
+
+Simulated spraying during 30 s outages (`spray_results.csv`, unweighted mean of correct % over the seven sequences):
+24.0% (odometry + GPS), 26.1% (+ IMU), 97.0% (+ slip learning). In the app the GPS Failure Simulator, Sensor Cost
+Comparison and Worker Safety pages show these tables with sequence, group and setup filters. Means use only
+sequence and outage cells that have every selected setup. "Fixed slip from 02 (no learning)" is excluded from the
+presentation comparison as requested by its author (it stays in the source file). These numbers are computed by the
+slip-learning analysis on recorded CitrusFarm runs with simulated outages; they have not been re-derived here.
+
+### Rerun
+
+`build_team_recording` logs:
+* the RTK reference and the confidence-coloured estimate;
+* the robot pose and the 2σ bubble;
+* the safety bubble ring, coloured by action;
+* simulated workers inside their visibility windows;
+* final simulated spray outcomes;
+* outage and state events;
+* time series of error, 2σ, slip scale, state, both decision modes and worker distance.
+
+The `time` timeline is the exported `t`. Files are named `recordings/team_<SEQ>_<mode>.rrd`, and an existing file is
+reused unless a rebuild is requested. Use Engineer mode, tab *Rerun replay*, or `scripts/export_rerun.py` (see step 5
+of the installation). No LiDAR is shown, because the export contains none.
+
+### Adding future runs or methods
+
+* **New sequence runs in this format:**
+  1. Put `<SEQ>_dashboard.csv`, `<SEQ>_trees.csv` and `<SEQ>_crew.csv` with the exact columns above into
+     `team_runs/slip_learning/`.
+  2. Append rows to the three summary files.
+  3. Reload the app.
+
+  Validation errors are shown in the app and raised by `team_slip.load_run`. Run `pytest` before committing.
+* **A different localization method:** export it in the general adapter format (`team_runs/<SEQ>__<method>.csv`, see
+  the [Teammate integration guide](#teammate-integration-guide)). It then appears in the Engineer *Team data* tab and
+  the backend Rerun recording.
+* **Replaying a second method in this format:** `team_slip.TEAM_DIR` currently points to one folder, so a second
+  replay source needs a small code change.
+
+### Final demonstration (02_13B, Safe mode)
+
+1. Select **Team Slip-Learning Results** and press **▶ Run GPS Failure Demo**. It plays 50 s to 100 s at 4×.
+2. **Before 60 s:** GO, Trusted, GPS available, 2σ about 8 cm.
+3. **At 60 s:** the simulated GPS outage starts and a simulated worker appears ahead on the route.
+4. **At 62.9 s:** the state turns Degraded and the action SLOW.
+5. **At 75.2 s:** 2σ exceeds 1.5 m, the state turns Lost, and Safe mode recommends **STOP**. In Productive mode the STOP
+   comes at 80.3 s, when the worker is inside the bubble.
+6. **Around 84 s:** the robot passes the worker, the STOP alert names the worker, and the English and Spanish alerts
+   update.
+7. **At 90.0 s:** GPS is restored, and the state is Trusted again at 90.1 s.
+8. **Engineer mode:** the same moment appears in the trajectory and error vs uncertainty charts. Actual error in this
+   outage peaks at 0.94 m while 2σ peaks at 5.4 m, so the uncertainty is conservative.
 
 ## Rerun integration
 
@@ -572,6 +801,8 @@ print("\n".join(b.checks))
 * **To compare a slip-corrected odometry trajectory:** dead-reckon it, export it as `<SEQ>__odom-slip-corrected.csv`
   with `gps_input` omitted and `sensors` set to `"odom"`, and compare its error in the Team data tab and Rerun against
   the B1 baseline.
+* **The team's slip-learning results already implement a learned correction** and are compared with the backend EKF
+  in Engineer mode (see [Team Slip-Learning Localization Results](#team-slip-learning-localization-results)).
 * **Fusing a corrected odometry twist inside our EKF is not implemented.** The odometry stream is fixed to `odom.csv`
   (`t, v, w`). It would need a new stream in `SensorStreams` and a measurement update in `run_ekf`. Please do not
   overwrite `odom.csv` with corrected values, because that silently changes every experiment.
@@ -611,8 +842,21 @@ print("\n".join(b.checks))
   * adapter imports, including the documented example
 * `tests/test_consistency.py`: exports `.rrd` files, reads them back, and checks that Rerun and the operator 3D scene
   agree on coordinates, units and timestamps.
+* `tests/test_team_slip.py`: slip-learning data layer.
+  * Files and schema: discovery of all 24 files, canonical names and conflicts, schema errors, strict booleans,
+    missing and invalid values, timestamp order.
+  * Data consistency: `error_m` and state consistency, outage transitions, tree timing, the match with `gt.csv`.
+  * Rules: Safe / Productive decisions, worker visibility and distance, the capability limits, events and alerts.
+  * Rerun: the recording is read back and compared with the CSV.
+* `tests/test_team_ui.py`: the Team Slip-Learning Results source.
+  * All five pages in both modes.
+  * The one-click demo and the jump buttons.
+  * Synchronised action, tiles and alerts at known times.
+  * Safe vs Productive, hidden spray timing, unavailable fields reported.
+  * The backend EKF stays the default.
 
-Most UI tests need the local CitrusFarm data for 06_14B (see step 2 of the installation).
+Most backend UI tests need the local CitrusFarm data for 06_14B (see step 2 of the installation). The slip-learning
+tests use the committed CSVs; only the `gt.csv` cross-check is skipped without local data.
 
 ## Current limitations
 
@@ -621,8 +865,15 @@ Most UI tests need the local CitrusFarm data for 06_14B (see step 2 of the insta
 * **Only 06_14B has recorded IMU and GPS.** The other six sequences use a simulated GPS proxy; C2 is measured live on
   06_14B only, and the committed batch tables predate the 06_14B extraction.
 * **No real LiDAR odometry, point clouds or canopy index** are connected; C3 is *Not evaluated* on real data.
-* **Teammate localization estimates are not integrated yet**; the adapter and drop folder are ready.
-* **The proposed wheel-slip correction is not investigated in the fusion yet** (see 14 above).
+* **Slip-learning results are replayed, not re-run.**
+  * The dashboard cannot rerun the slip-learning analysis or vary its outages.
+  * The export does not define `sigma` further and does not say whether its GPS input was recorded or simulated.
+  * Its 2σ is very conservative during outages (on 02_13B it reaches 5.4 m while the actual error stays below
+    0.94 m), so Safe mode stops long before the error matters.
+  * The learned slip correction has not been validated independently.
+* **Spray timing for the slip-learning runs is approximate** (02_13B and 06_14B) or not shown during the replay (the
+  other five runs). Workers in those exports always stand on the robot's path.
+* **The backend EKF does not include the wheel-slip correction**; only the slip-learning results do (see 14 above).
 * **Navigation thresholds** (0.3 m trusted, 1.0 m stop, 2.0 m minimum worker buffer) await domain lead review. With
   odometry + IMU the monitor recommends Stop far earlier than the true error requires.
 * **Rerun and Streamlit playback are independent**; there is no supported cursor sync for the embedded web viewer.
@@ -632,6 +883,12 @@ Most UI tests need the local CitrusFarm data for 06_14B (see step 2 of the insta
 ## Two-minute demo walkthrough
 
 Full script with what to say and which claims to avoid: [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
+
+**Primary demo (slip learning, 02_13B, Safe mode).** Follow
+[Final demonstration](#final-demonstration-02_13b-safe-mode), then show the GPS Failure Simulator page (worst error
+vs outage length per setup) and the Sensor Cost Comparison page (slip learning needs no extra hardware).
+
+**Backend EKF demo:**
 
 1. **Mission Control, Operator, 06_14B.** A real CitrusFarm run; the trees are drawn for context.
 2. **Run GPS Failure Demo.** GPS is cut for 60 s at 100 s: GPS tile goes Lost, status turns Degraded, the bubble and
