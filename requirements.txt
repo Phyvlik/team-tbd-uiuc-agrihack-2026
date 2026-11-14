@@ -1,0 +1,11 @@
+# Tested with Python 3.13 on Windows 11 (2026-11-13)
+numpy==2.5.4
+pandas==3.1.1
+scipy==1.18.1
+scikit-learn==1.9.1
+streamlit==1.67.0
+plotly==7.1.0
+rosbags==0.11.9   # ROS1 bag reading + message deserialisation (no ROS install needed)
+lz4==4.4.5        # some ROS bags use lz4-compressed chunks
+pytest==9.2.0
+# optional: rerun-sdk for the 3D scene (not yet used)

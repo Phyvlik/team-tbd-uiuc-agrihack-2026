@@ -1,0 +1,26 @@
+# environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# datasets — never commit (CitrusFarm license: do not redistribute; sizes up to GBs)
+data/raw/
+data/processed/
+*.bag
+*.mcap
+*.npz
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# streamlit secrets
+.streamlit/secrets.toml
+
+# team/organizer PDFs: kept locally, not committed (decide as a team before pushing anywhere public)
+/project-plan.pdf
+/challenge-requirements.pdf
