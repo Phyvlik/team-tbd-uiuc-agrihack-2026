@@ -1,5 +1,11 @@
 # Implementation status — 2026-11-13 (end of phase 1)
 
+> **Historical snapshot, kept unchanged below.** Current status is in the top-level `README.md`.
+> Since this was written: 06_14B IMU and recorded GPS were extracted, and the new dashboard replaced
+> `pages/`. The headline numbers below use the **simulated GPS proxy** (reference plus 3 cm noise).
+> The 94 to 95% coverage was therefore not measured with real GPS: with recorded GPS on 06_14B
+> coverage is 53% (see `docs/UNCERTAINTY_CALIBRATION.md`).
+
 Legend: ✅ working on real CitrusFarm data · 🟡 implemented and tested, waiting on a data stream · ⛔ not started
 
 | SP | status | what exists | what's missing |
