@@ -9,6 +9,7 @@ alerts and events.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -358,6 +359,220 @@ def live_panel():
         st.caption("Spanish drafted for the demo, pending native-speaker review.")
 
 
+# ------------------------------------------------------------------- engineer --
+
+UNAVAILABLE = ("IMU gyro bias", "GPS NIS / consistency-gate statistics", "GPS rejection history",
+               "Raw GPS fixes used by the teammate's filter", "LiDAR measurements or point clouds",
+               "Full position covariance (only a scalar sigma is exported)", "Robot speed")
+
+
+def _time_axes(fig, run, height=280, title="metres"):
+    ch.add_outage_bands(fig, run.outages, 0.0)
+    ch._base_layout(fig, height, legend_bottom=False, hovermode="x unified")
+    fig.update_xaxes(title_text="time since start (s)")
+    fig.update_yaxes(title_text=title)
+    return fig
+
+
+def error_uncertainty_figure(run: ts.TeamRun, t_now: float | None = None) -> go.Figure:
+    d = run.dash
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=d.t, y=d.error_m, mode="lines", name="Actual error vs RTK (error_m)",
+                             line=dict(color=SERIES[0], width=1.8)))
+    fig.add_trace(go.Scatter(x=d.t, y=2 * d.sigma, mode="lines", name="Model uncertainty 2σ",
+                             line=dict(color=SERIES[1], width=1.8, dash="dash")))
+    fig.add_hline(y=ts.TRUSTED_2SIGMA_M, line=dict(color=MUTED, dash="dot", width=1),
+                  annotation_text="0.3 m target", annotation_font=dict(color=MUTED, size=11))
+    if t_now is not None:
+        fig.add_vline(x=t_now, line=dict(color=INK, width=1.2))
+    return _time_axes(fig, run, 300)
+
+
+def slip_figure(run: ts.TeamRun, t_now: float | None = None) -> go.Figure:
+    d = run.dash
+    fig = go.Figure(go.Scatter(x=d.t, y=d.slip_scale, mode="lines", name="Learned slip scale",
+                               line=dict(color=SERIES[2], width=2)))
+    fig.add_hline(y=1.0, line=dict(color=MUTED, dash="dot", width=1), annotation_text="1.0 = no correction",
+                  annotation_font=dict(color=MUTED, size=11))
+    if t_now is not None:
+        fig.add_vline(x=t_now, line=dict(color=INK, width=1.2))
+    return _time_axes(fig, run, 260, "wheel-speed scale")
+
+
+def decision_figure(run: ts.TeamRun) -> go.Figure:
+    fig = go.Figure()
+    for mode, col in ((ts.SAFE, SERIES[0]), (ts.PRODUCTIVE, SERIES[1])):
+        dec = decisions(run.sequence, mode)
+        fig.add_trace(go.Scatter(x=dec.t, y=dec.level + (0.04 if mode == ts.SAFE else -0.04), mode="lines",
+                                 name=f"{mode} mode", line=dict(color=col, width=2, shape="hv")))
+    fig.update_yaxes(tickvals=[0, 1, 2], ticktext=["GO", "SLOW", "STOP"], range=[-0.3, 2.3])
+    return _time_axes(fig, run, 220, "action")
+
+
+def worker_figure(run: ts.TeamRun, mode: str) -> go.Figure:
+    dec = decisions(run.sequence, mode)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=dec.t, y=dec.dist_m, mode="lines", name="Distance to visible worker (estimate)",
+                             line=dict(color=SERIES[0], width=2), connectgaps=False))
+    fig.add_trace(go.Scatter(x=dec.t, y=dec.bubble_m, mode="lines", name="Safety bubble (STOP inside)",
+                             line=dict(color=CRIT, width=1.5, dash="dash")))
+    fig.add_trace(go.Scatter(x=dec.t, y=dec.bubble_m + ts.SLOW_MARGIN_M, mode="lines", name="Bubble + 5 m (SLOW)",
+                             line=dict(color=WARN, width=1.5, dash="dot")))
+    return _time_axes(fig, run, 260)
+
+
+@st.cache_data(show_spinner="Running the backend EKF with the teammate's outage windows…")
+def backend_comparison(seq: str):
+    """Backend EKF on the same sequence with the SAME outage windows, if the CitrusFarm data is local."""
+    from . import backend as be
+    if seq not in be.source_keys():
+        return None
+    streams = be.load_streams(seq)
+    methods = be.methods_for(streams)
+    method = "odom+imu+gps" if "odom+imu+gps" in methods else methods[0]
+    run = load(seq)
+    outages = tuple((round(a, 3), round(b - a, 3)) for a, b in run.outages)
+    res = be.experiment(seq, be.METHODS[method], outages)
+    t0 = streams.time_span()[0]
+    est = res.estimate
+    return {"method": be.METHOD_LABEL[method], "gps_source": res.gps_source,
+            "t": est.t.to_numpy() - t0, "x": est.x_ant.to_numpy(), "y": est.y_ant.to_numpy(),
+            "err_t": res.error.t.to_numpy() - t0, "err": res.error.err.to_numpy()}
+
+
+def trajectory_figure(run: ts.TeamRun, bk: dict | None) -> go.Figure:
+    d = run.dash
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=d.x_true, y=d.y_true, mode="lines", name="RTK reference (gt.csv)",
+                             line=dict(color=REF, width=2, dash="dot")))
+    fig.add_trace(go.Scatter(x=d.x_est, y=d.y_est, mode="lines", name="Teammate estimate (slip learning)",
+                             line=dict(color=SERIES[2], width=2)))
+    if bk is not None:
+        fig.add_trace(go.Scatter(x=bk["x"], y=bk["y"], mode="lines", name=f"Backend EKF ({bk['method']})",
+                                 line=dict(color=SERIES[0], width=1.6)))
+    for k, (a, b) in enumerate(run.outages):
+        m = (d.t >= a) & (d.t <= b)
+        fig.add_trace(go.Scatter(x=d.x_true[m], y=d.y_true[m], mode="lines", line=dict(color=WARN, width=7),
+                                 opacity=0.35, name="GPS outage (simulated)", showlegend=k == 0, hoverinfo="skip"))
+    ch_idx = np.flatnonzero(np.diff(d.state.to_numpy()) != 0) + 1
+    fig.add_trace(go.Scatter(x=d.x_est[ch_idx], y=d.y_est[ch_idx], mode="markers", name="Confidence state change",
+                             marker=dict(size=7, color=[STATE[ts.STATE_THEME[int(v)]]["color"] for v in d.state[ch_idx]],
+                                         line=dict(color="#0b0f14", width=1))))
+    ch._base_layout(fig, 520, legend_bottom=True, uirevision=f"team-traj-{run.sequence}")
+    ch._equal_axes(fig)
+    fig.update_xaxes(title_text="x (m, gt.csv frame)")
+    fig.update_yaxes(title_text="y (m)")
+    return fig
+
+
+@st.cache_data(show_spinner=False)
+def slip_table() -> pd.DataFrame:
+    rows = []
+    for seq in sequences():
+        r = load(seq)
+        s = r.dash.slip_scale
+        rows.append({"sequence": seq, "final slip scale": round(float(s.iloc[-1]), 4),
+                     "min": round(float(s.min()), 4), "max": round(float(s.max()), 4),
+                     "reduction vs uncorrected (final)": f"{100 * (1 - s.iloc[-1]):.1f} %"})
+    return pd.DataFrame(rows)
+
+
+def _metrics(err: np.ndarray, t: np.ndarray, outages) -> dict:
+    m = np.zeros(len(t), bool)
+    for a, b in outages:
+        m |= (t >= a) & (t < b)
+    return {"mean error (m)": round(float(np.mean(err)), 3), "max error (m)": round(float(np.max(err)), 2),
+            "time within 0.3 m (%)": round(float(100 * np.mean(err <= 0.3)), 1),
+            "peak error in outages (m)": round(float(np.max(err[m])), 2) if m.any() else None}
+
+
+def engineer(seq: str):
+    ss = st.session_state
+    run = load(seq)
+    t_now = float(ss[TKEY])
+    st.divider()
+    tabs = st.tabs(["Trajectory comparison", "Error vs uncertainty", "Wheel-slip learning", "Decisions",
+                    "Event log", "Validation & provenance"])
+    with tabs[0]:
+        bk = backend_comparison(seq)
+        st.plotly_chart(trajectory_figure(run, bk), key="team_traj", theme=None, config={"displaylogo": False})
+        rows = [{"run": "Teammate: odometry + IMU + GPS + slip learning", **_metrics(run.dash.error_m.to_numpy(),
+                                                                                       run.dash.t.to_numpy(),
+                                                                                       run.outages)}]
+        if bk is not None:
+            rows.append({"run": f"Backend EKF: {bk['method']}", **_metrics(bk["err"], bk["err_t"], run.outages)})
+        ui.df_table(pd.DataFrame(rows))
+        if bk is None:
+            ui.not_evaluated("Backend EKF comparison", "the CitrusFarm data for this sequence is not available "
+                             "locally.", "scripts/download_citrusfarm_subset.py and scripts/validate_baseline.py")
+        else:
+            gps = ("a SIMULATED GPS proxy (reference + 3 cm noise)" if bk["gps_source"] == "proxy_from_reference"
+                   else "recorded GPS fixes")
+            st.caption(f"Two different implementations on the same RTK reference and the same simulated outage "
+                       f"windows. The backend EKF here uses {bk['method'].lower()} with {gps}; the teammate's filter "
+                       f"adds a learned wheel-slip correction and its GPS input is not described in the export. "
+                       f"Sensor sets and GPS inputs differ, so this is not a controlled comparison.")
+    with tabs[1]:
+        st.plotly_chart(error_uncertainty_figure(run, t_now), key="team_err", theme=None,
+                        config={"displaylogo": False})
+        d = run.dash
+        inside = d.error_m <= 2 * d.sigma
+        m = d.gps_out.to_numpy()
+        ui.kpi_row([
+            ui.kpi_html("Error ≤ 2σ (all)", f"{100 * inside.mean():.1f} %", "share of samples"),
+            ui.kpi_html("Error ≤ 2σ (outages)", f"{100 * inside[m].mean():.1f} %" if m.any() else "n/a",
+                        "during simulated outages"),
+            ui.kpi_html("Max error", f"{d.error_m.max():.2f} m", "full run"),
+            ui.kpi_html("Time within 0.3 m", f"{100 * (d.error_m <= 0.3).mean():.1f} %", "full run"),
+        ])
+        st.caption("**Actual error** (error_m) is the distance to the RTK reference and is only known afterwards. "
+                   "**Model uncertainty** (2σ) is what the teammate's filter believes in real time. If sigma is a "
+                   "per-axis standard deviation of an ideal 2D Gaussian estimate, a 2σ circle would contain the truth "
+                   "about 86 % of the time (the export does not define sigma further). The shares above are an "
+                   "empirical check, not a calibration proof.")
+    with tabs[2]:
+        st.plotly_chart(slip_figure(run, t_now), key="team_slip", theme=None, config={"displaylogo": False})
+        s = run.dash.slip_scale
+        st.markdown(f"Learned wheel-speed scale on **{seq}**: starts at {s.iloc[0]:.3f}, ends at **{s.iloc[-1]:.3f}** "
+                    f"(about {100 * (1 - s.iloc[-1]):.1f} % less than the uncorrected wheel speed). A value near "
+                    f"0.885 means the filter scales the wheel-odometry speed down by about 11.5 % to account for "
+                    f"wheel slip. The correction is learned per run; values differ between runs:")
+        ui.df_table(slip_table())
+        st.caption("Computed by the teammate's filter; not independently validated here.")
+    with tabs[3]:
+        st.plotly_chart(decision_figure(run), key="team_dec", theme=None, config={"displaylogo": False})
+        st.plotly_chart(worker_figure(run, ss.team_mode), key="team_wd", theme=None, config={"displaylogo": False})
+        rows = []
+        for mode in ts.MODES:
+            dec = decisions(seq, mode)
+            dt = np.diff(np.r_[dec.t.to_numpy(), dec.t.iloc[-1]])
+            rows.append({"mode": mode, **{f"time {a} (s)": round(float(dt[dec.action == a].sum()), 1)
+                                          for a in (ts.GO, ts.SLOW, ts.STOP)},
+                         "STOP episodes": int(((dec.level == 2) & (dec.level.shift(fill_value=0) != 2)).sum())})
+        ui.df_table(pd.DataFrame(rows))
+        st.caption("Decisions follow the teammate's documented rules on the supplied columns (dashboard/team_slip.py). "
+                   "Workers and decisions are simulated; no command is sent to a robot.")
+    with tabs[4]:
+        ev = ts.events(run, decisions(seq, ss.team_mode)).rename(columns={"t_rel": "time (s)"})
+        ui.df_table(ev.assign(**{"time (s)": ev["time (s)"].round(1)}), height=360)
+    with tabs[5]:
+        st.markdown("**Validation of the supplied files** (values are shown as supplied; nothing is corrected)")
+        st.markdown("\n".join(f"- {c}" for c in run.checks))
+        st.markdown("- `x_true, y_true` equal the CitrusFarm `gt.csv` reference on the same clock "
+                    "(checked on 02_13B and 06_14B: median difference below 1 mm, no rotation, no time offset)")
+        st.markdown("**Not available in this teammate export**")
+        ui.df_table(pd.DataFrame({"field": UNAVAILABLE, "status": "Not available in this teammate export"}))
+        ui.df_table(pd.DataFrame([
+            ("RTK reference trajectory", "Recorded (CitrusFarm gt.csv, post-processed RTK)"),
+            ("Estimated pose, sigma, state, slip scale, error", "Computed by the teammate's localization analysis"),
+            ("GPS outages", "Simulated (30 s every 90 s from 60 s)"),
+            ("Trees and spray outcomes", "Simulated by the teammate, not surveyed or measured"),
+            ("Workers", "Simulated positions, not detected people"),
+            ("GO / SLOW / STOP", "Teammate's rules applied in this dashboard (simulated decision support)"),
+            ("Files", ", ".join(Path(p).name for p in run.files.values())),
+        ], columns=["item", "origin"]))
+
+
 def mission_control():
     ss = st.session_state
     eng = S.is_engineer()
@@ -370,7 +585,9 @@ def mission_control():
     run = load(seq)
     toolbar(run)
     st.fragment(run_every=0.5 if ss.playing == PAGE else None)(live_panel)()
-    if not eng:
+    if eng:
+        engineer(seq)
+    else:
         st.markdown("<div class='small' style='margin-top:6px'>Switch to <b>Engineer</b> mode (sidebar) for the "
                     "reference trajectory, error vs uncertainty, wheel-slip learning and the Rerun replay.</div>",
                     unsafe_allow_html=True)
