@@ -13,8 +13,9 @@ from . import orchard as orc
 from .theme import CRIT, GOOD, INK, REF, SERIES, STATE, WARN
 
 LEVEL_STATE = {0: "TRUSTED", 1: "DEGRADED", 2: "STOP"}
-SPRAY_COLOR = {orc.NOT_REACHED: "#2f6b3f", orc.TREATED: SERIES[0], orc.MISSED: "#e8e2d0", orc.DOUBLE: "#d55181"}
-DECISION_COLOR = {"CONTINUE": GOOD, "SLOW": WARN, "STOP": CRIT}
+SPRAY_COLOR = {orc.NOT_REACHED: "#2f6b3f", orc.TREATED: SERIES[0], orc.MISSED: "#e8e2d0", orc.DOUBLE: "#d55181",
+               orc.WRONG_TREE: SERIES[1]}
+DECISION_COLOR = {"CONTINUE": GOOD, "GO": GOOD, "SLOW": WARN, "STOP": CRIT}
 
 # unit low-poly sphere (2 poles + 3 rings × 7) for tree canopies
 _RINGS, _SEG = 3, 7
@@ -81,10 +82,14 @@ def _box(cx, cy, th, L=1.5, W=1.25, H=0.8, z0=0.12):
     return P, F
 
 
-def _ellipsoid(est_row, height):
-    cov = np.array([[est_row.var_x, est_row.cov_xy], [est_row.cov_xy, est_row.var_y]])
-    vals, vecs = np.linalg.eigh(cov)
-    ax = np.sqrt(5.991 * np.maximum(vals, 1e-6))          # 95 % in 2D
+def _ellipsoid(est_row, height, radius: float | None = None):
+    """Covariance 95 % ellipse, or a circle of ``radius`` when the source gives a scalar uncertainty."""
+    if radius is not None:
+        ax, vecs = np.array([radius, radius]), np.eye(2)
+    else:
+        cov = np.array([[est_row.var_x, est_row.cov_xy], [est_row.cov_xy, est_row.var_y]])
+        vals, vecs = np.linalg.eigh(cov)
+        ax = np.sqrt(5.991 * np.maximum(vals, 1e-6))          # 95 % in 2D
     V = SPHERE_V.copy()
     xy = (V[:, :2] * ax) @ vecs.T
     return np.c_[xy[:, 0] + est_row.x_ant, xy[:, 1] + est_row.y_ant, V[:, 2] * height + 0.2], SPHERE_F, ax
@@ -106,7 +111,9 @@ def _ring(x, y, r, z=0.05, n=64):
 
 def orchard_scene(streams, res, t_now: float, orchard: orc.Orchard, spray: np.ndarray | None,
                   *, dec=None, zones=None, half: float = 17.0, show_reference: bool = False,
-                  height: int = 470, overview: bool = False) -> go.Figure:
+                  height: int = 470, overview: bool = False, uncertainty_radius: float | None = None) -> go.Figure:
+    """``uncertainty_radius``: draw the bubble as a circle of this radius (m) instead of the 95 %
+    covariance ellipse, for sources that supply a scalar uncertainty (teammate 2*sigma)."""
     est, states = res.estimate, res.states
     m = est.t.to_numpy() <= t_now
     e, lv = est[m], states.level.to_numpy()[m]
@@ -214,15 +221,18 @@ def orchard_scene(streams, res, t_now: float, orchard: orc.Orchard, spray: np.nd
     else:
         fig.add_trace(_empty_line())
     # uncertainty bubble
-    V, F, ax = _ellipsoid(row, height=min(1.2 + 0.4 * float(row.r95), 3.0))
+    V, F, ax = _ellipsoid(row, height=min(1.2 + 0.4 * float(row.r95), 3.0), radius=uncertainty_radius)
     fig.add_trace(go.Mesh3d(x=V[:, 0], y=V[:, 1], z=V[:, 2], i=F[:, 0], j=F[:, 1], k=F[:, 2], color=stt["color"],
-                            opacity=0.22, flatshading=False, hoverinfo="skip", name="95 % position uncertainty",
+                            opacity=0.22, flatshading=False, hoverinfo="skip", name="Position uncertainty",
                             showlegend=False))
     ex_, ey_, ez_ = _ring(0, 0, 1)
     vals = np.c_[ex_, ey_]
-    cov = np.array([[row.var_x, row.cov_xy], [row.cov_xy, row.var_y]])
-    w, vec = np.linalg.eigh(cov)
-    ring = (vals * np.sqrt(5.991 * np.maximum(w, 1e-6))) @ vec.T
+    if uncertainty_radius is not None:
+        ring = vals * uncertainty_radius
+    else:
+        cov = np.array([[row.var_x, row.cov_xy], [row.cov_xy, row.var_y]])
+        w, vec = np.linalg.eigh(cov)
+        ring = (vals * np.sqrt(5.991 * np.maximum(w, 1e-6))) @ vec.T
     fig.add_trace(go.Scatter3d(x=ring[:, 0] + cx, y=ring[:, 1] + cy, z=np.full(len(ring), 0.1), mode="lines",
                                line=dict(color=stt["color"], width=4), hoverinfo="skip", showlegend=False))
     # robot body (2× scale) + status beacon + heading arrow

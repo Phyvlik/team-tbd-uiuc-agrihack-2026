@@ -43,8 +43,9 @@ WINDOW_M = 1.0           # physical spray fan: ±1 m along the row
 FIRE_M = 0.3             # controller fires when it believes the tree is abreast (±0.3 m)
 
 NOT_REACHED, TREATED, MISSED, DOUBLE = 0, 1, 2, 3
+WRONG_TREE = 4           # only in teammate results: the tree received another tree's dose
 SPRAY_LABEL = {NOT_REACHED: "Not yet reached", TREATED: "Correctly treated", MISSED: "Missed",
-               DOUBLE: "Double-treated"}
+               DOUBLE: "Double-treated", WRONG_TREE: "Wrong tree"}
 
 
 @dataclass

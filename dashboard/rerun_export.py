@@ -32,7 +32,7 @@ STATE_RGB = {0: (12, 163, 12), 1: (250, 178, 25), 2: (208, 59, 59)}
 METHOD_RGB = {"C1": (57, 135, 229), "C2": (217, 89, 38), "C3": (25, 158, 112), "imported": (201, 133, 0),
               "B1": (138, 148, 142)}
 SPRAY_RGB = {orc.NOT_REACHED: (47, 107, 63), orc.TREATED: (57, 135, 229), orc.MISSED: (232, 226, 208),
-             orc.DOUBLE: (213, 81, 129)}
+             orc.DOUBLE: (213, 81, 129), orc.WRONG_TREE: (217, 89, 38)}
 
 
 def available() -> tuple[bool, str]:
